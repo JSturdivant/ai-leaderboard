@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Cost vs. Performance Tracker</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-annotation@3.1.0/dist/chartjs-plugin-annotation.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-top">
+                <div class="header-left">
+                    <h1 class="title">LLM Cost vs. Performance Tracker</h1>
+                    <p class="subtitle">Interactive analysis of price-performance trade-offs across leading large language models</p>
+                </div>
+                <div class="header-right">
+                    <div class="last-updated" id="lastUpdated"></div>
+                    <button class="theme-toggle" id="themeToggle" title="Toggle light/dark mode">
+                        <span class="theme-icon" id="themeIcon">☀️</span>
+                    </button>
+                </div>
+            </div>
+            <div class="header-description">
+                <p>This tool compares the cost and performance of major large language models (LLMs) from providers including OpenAI, Anthropic, Google, Meta, xAI, Mistral, and DeepSeek. Performance is measured using standardized benchmarks, while cost reflects per-token API pricing. Use the interactive scatter plot below to explore trade-offs and identify the best value models for your use case.</p>
+            </div>
+        </header>
+
+        <!-- Controls -->
+        <section class="controls">
+            <div class="control-group">
+                <label for="benchmarkSelect">Benchmark</label>
+                <select id="benchmarkSelect"></select>
+            </div>
+            <div class="control-group">
+                <label for="costSelect">Cost Metric</label>
+                <select id="costSelect">
+                    <option value="total">Total (Input + Output) per 1M tokens</option>
+                    <option value="input">Input Only per 1M tokens</option>
+                    <option value="output">Output Only per 1M tokens</option>
+                </select>
+            </div>
+            <div class="control-group">
+                <label>Providers</label>
+                <div class="provider-filters" id="providerFilters"></div>
+            </div>
+            <div class="control-group control-actions">
+                <button class="btn btn-secondary" id="downloadCsv">
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1v9m0 0L5 7m3 3l3-3M2 12v1a2 2 0 002 2h8a2 2 0 002-2v-1" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+                    Download CSV
+                </button>
+            </div>
+        </section>
+
+        <!-- Chart -->
+        <section class="chart-section">
+            <div class="chart-container">
+                <canvas id="scatterChart"></canvas>
+            </div>
+        </section>
+
+        <!-- Data Table -->
+        <section class="table-section">
+            <h2 class="section-title">All Models — Cost & Performance Details</h2>
+            <div class="table-wrapper">
+                <table id="dataTable">
+                    <thead>
+                        <tr>
+                            <th data-sort="name">Model <span class="sort-arrow"></span></th>
+                            <th data-sort="provider">Provider <span class="sort-arrow"></span></th>
+                            <th data-sort="input_cost">Input $/1M <span class="sort-arrow"></span></th>
+                            <th data-sort="output_cost">Output $/1M <span class="sort-arrow"></span></th>
+                            <th data-sort="total_cost">Total $/1M <span class="sort-arrow"></span></th>
+                            <th data-sort="benchmark" id="benchmarkHeader">Benchmark <span class="sort-arrow"></span></th>
+                        </tr>
+                    </thead>
+                    <tbody id="dataTableBody"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Benchmark Explainer -->
+        <section class="explainer-section">
+            <h2 class="section-title">Benchmark Descriptions</h2>
+            <div class="explainer-grid" id="explainerGrid"></div>
+        </section>
+
+        <!-- Sources -->
+        <section class="sources-section">
+            <h2 class="section-title">Sources & Methodology</h2>
+            <div class="sources-content">
+                <div class="source-group">
+                    <h3>Pricing Sources</h3>
+                    <ul id="pricingSources"></ul>
+                </div>
+                <div class="source-group">
+                    <h3>Benchmark Sources</h3>
+                    <ul id="benchmarkSources"></ul>
+                </div>
+                <div class="source-group">
+                    <h3>Methodology</h3>
+                    <p>Pricing reflects official API rates from each provider as of the last update date. For open-weight models (e.g., Llama), pricing is based on representative API hosting providers. Benchmark scores are sourced from official technical reports, published papers, and trusted third-party evaluations. "Total cost" is calculated as input price + output price per 1M tokens. All benchmarks use publicly reported scores; where multiple evaluation settings exist, we use the most commonly cited configuration.</p>
+                </div>
+            </div>
+        </section>
+
+        <footer class="footer">
+            <p>LLM Cost vs. Performance Tracker — Data compiled from public sources. Last verified April 2025.</p>
+        </footer>
+    </div>
+
+    <script src="data.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
