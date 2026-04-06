@@ -454,6 +454,20 @@ body {
     font-weight: 500;
 }
 
+.explainer-measurement {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: var(--accent);
+    background: var(--accent-soft);
+    border: 1px solid rgba(59,130,246,0.15);
+    border-radius: 6px;
+    padding: 7px 10px;
+    margin: 10px 0 8px;
+    line-height: 1.5;
+}
+
 .explainer-card p {
     font-size: 0.88rem;
     color: var(--text-secondary);

@@ -96,7 +96,11 @@
                 <h3>${b.name}</h3>
                 <div class="explainer-meta">${b.fullName} &middot; Scale: ${b.scale}</div>
                 <p>${b.description}</p>
-                <div class="explainer-meta" style="margin-top:8px;"><strong>Source:</strong> ${b.source}</div>
+                <div class="explainer-measurement">
+                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;margin-top:1px"><circle cx="8" cy="8" r="6.5" stroke="currentColor" stroke-width="1.4"/><path d="M8 5v3.5l2 1.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+                    <span><strong>Data collected:</strong> ${b.lastCollected}</span>
+                </div>
+                <div class="explainer-meta"><strong>Source:</strong> ${b.source}</div>
             `;
             grid.appendChild(card);
         });
@@ -236,13 +240,15 @@
                         callbacks: {
                             title: (items) => {
                                 const d = items[0].raw;
-                                return d.model.name + " (" + d.model.provider + ")";
+                                const rel = d.model.releaseDate ? "  (released " + d.model.releaseDate + ")" : "";
+                                return d.model.name + " (" + d.model.provider + ")" + rel;
                             },
                             label: (item) => {
                                 const d = item.raw;
                                 const m = d.model;
                                 const lines = [
                                     benchInfo.name + ": " + d.y + (currentBenchmark === "arena_elo" ? "" : "%"),
+                                    "  Data: " + (benchInfo.lastCollected.split(".")[0]),
                                     "",
                                     "Input:  $" + m.input_cost.toFixed(2) + " / 1M tokens",
                                     "Output: $" + m.output_cost.toFixed(2) + " / 1M tokens",

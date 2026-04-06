@@ -1,6 +1,6 @@
 // ============================================================
 // LLM Cost vs. Performance Tracker — Data Layer
-// Last updated: April 2026
+// Last updated: April 6, 2026
 // ============================================================
 
 const DATA_LAST_UPDATED = "April 6, 2026";
@@ -24,65 +24,73 @@ const BENCHMARKS = {
         name: "MMLU",
         fullName: "Massive Multitask Language Understanding",
         scale: "0–100%",
-        description: "Tests knowledge across 57 academic subjects including STEM, humanities, and social sciences. Each question is multiple-choice. Higher scores indicate broader factual knowledge and reasoning ability across disciplines.",
+        description: "Tests knowledge across 57 academic subjects including STEM, humanities, and social sciences. Each question is multiple-choice. Higher scores indicate broader factual knowledge and reasoning ability across disciplines. Note: frontier models are now saturating this benchmark (>88%), making MMLU-Pro a better differentiator for top models.",
         measures: "Breadth of academic and professional knowledge",
+        lastCollected: "Per-model at launch; continuously tracked. Most recent model scores collected March–April 2026. Benchmark published Jan 2021.",
         source: "Hendrycks et al., 2021 — scores from official model technical reports & OpenAI simple-evals"
     },
     gpqa: {
         name: "GPQA Diamond",
         fullName: "Graduate-Level Google-Proof Q&A (Diamond subset)",
         scale: "0–100%",
-        description: "Expert-level science questions (biology, physics, chemistry) designed to be difficult even for domain PhDs. 'Google-proof' means the answers cannot be easily looked up. The Diamond subset contains the hardest questions where experts agree on the answer.",
+        description: "Expert-level science questions (biology, physics, chemistry) designed to be difficult even for domain PhDs. 'Google-proof' means the answers cannot be easily looked up. The Diamond subset contains the hardest questions where experts agree on the answer. Human PhD-level performance is ~65%; the best models now exceed 94%.",
         measures: "Deep scientific reasoning and expert-level knowledge",
+        lastCollected: "Per-model at launch; aggregated from Artificial Analysis & model cards. Most recent scores: March–April 2026. Benchmark published Nov 2023.",
         source: "Rein et al., 2023 — scores from model technical reports & Artificial Analysis"
     },
     humaneval: {
         name: "HumanEval",
         fullName: "HumanEval Code Generation",
         scale: "0–100% (pass@1)",
-        description: "164 Python programming challenges testing function-level code generation. The model must produce correct, runnable code from a docstring specification. pass@1 means the first attempt must be correct.",
+        description: "164 Python programming challenges testing function-level code generation. The model must produce correct, runnable code from a docstring specification. pass@1 means the first attempt must be correct. Many frontier models now score above 95%, indicating saturation; SWE-bench is increasingly preferred for real-world coding evaluation.",
         measures: "Code generation ability (Python)",
+        lastCollected: "Per-model at launch; near-saturated for frontier models as of 2025. Most recent scores collected March–April 2026. Benchmark published Jul 2021.",
         source: "Chen et al., 2021 — scores from model technical reports & LLM-Stats"
     },
     math: {
         name: "MATH",
         fullName: "MATH Benchmark (Competition Mathematics)",
         scale: "0–100%",
-        description: "12,500 problems from high-school math competitions (AMC, AIME, etc.) spanning algebra, geometry, number theory, combinatorics, and calculus. Problems require multi-step reasoning and formal mathematical manipulation.",
+        description: "12,500 problems from high-school math competitions (AMC, AIME, etc.) spanning algebra, geometry, number theory, combinatorics, and calculus. Problems require multi-step reasoning and formal mathematical manipulation. Reasoning models (o-series, R1) dramatically outperform base models here.",
         measures: "Mathematical problem-solving and formal reasoning",
+        lastCollected: "Per-model at launch. Most recent scores collected March–April 2026. Benchmark published Nov 2021.",
         source: "Hendrycks et al., 2021 — scores from model technical reports"
     },
     mmlu_pro: {
         name: "MMLU-Pro",
         fullName: "MMLU-Pro (Enhanced MMLU)",
         scale: "0–100%",
-        description: "A harder version of MMLU with 10 answer choices instead of 4, more reasoning-intensive questions, and reduced noise. Designed to better differentiate between top-performing models where standard MMLU is saturating.",
+        description: "A harder version of MMLU with 10 answer choices instead of 4, more reasoning-intensive questions, and reduced noise. Designed to better differentiate between top-performing models where standard MMLU is saturating. Best current models score ~83–87%.",
         measures: "Advanced reasoning across academic domains",
+        lastCollected: "Per-model at launch; tracked via Vellum LLM Leaderboard. Most recent scores collected March–April 2026. Benchmark published Jun 2024.",
         source: "Wang et al., 2024 — scores from model reports & Vellum LLM Leaderboard"
     },
     arena_elo: {
         name: "Arena ELO",
         fullName: "Chatbot Arena ELO Rating (LMArena / LMSYS)",
-        scale: "ELO rating (~800–1600)",
-        description: "Crowdsourced blind head-to-head comparisons where human users chat with two anonymous models and pick the better response. ELO ratings are computed from hundreds of thousands of votes. Measures overall conversational quality as judged by real users.",
+        scale: "ELO rating (~800–1600+)",
+        description: "Crowdsourced blind head-to-head comparisons where human users chat with two anonymous models and pick the better response. ELO ratings are computed from hundreds of thousands of votes. Measures overall conversational quality as judged by real users across diverse prompts.",
         measures: "Overall human-preference quality in open-ended conversation",
+        lastCollected: "Continuously updated via live human voting on lmarena.ai. No fixed refresh schedule. ELO scores shown are as of March 2026. Arena launched Apr 2023.",
         source: "LMSYS / LMArena Chatbot Arena, lmarena.ai — rankings as of March 2026"
     },
     ifeval: {
         name: "IFEval",
         fullName: "Instruction-Following Evaluation",
         scale: "0–100%",
-        description: "Tests how precisely a model follows specific formatting and content constraints (e.g., 'write exactly 3 paragraphs', 'include the word X exactly twice'). Measures instruction compliance rather than creative quality.",
+        description: "Tests how precisely a model follows specific formatting and content constraints (e.g., 'write exactly 3 paragraphs', 'include the word X exactly twice'). Measures instruction compliance rather than creative quality. Distinct from reasoning ability.",
         measures: "Precise instruction-following ability",
+        lastCollected: "Per-model at launch; self-reported by providers. Most recent scores collected March–April 2026. Benchmark published Nov 2023.",
         source: "Zhou et al., 2023 — scores from model technical reports"
     },
     swe_bench: {
         name: "SWE-bench Verified",
         fullName: "Software Engineering Benchmark (Verified subset)",
         scale: "0–100%",
-        description: "Real-world GitHub issues from popular Python repositories. The model must generate a correct patch that resolves the issue and passes existing test suites. The Verified subset contains human-validated instances.",
+        description: "Real-world GitHub issues from popular Python repositories. The model must generate a correct patch that resolves the issue and passes existing test suites. The Verified subset contains human-validated instances. Leaderboard overhauled Feb 2026 (v2.0 scaffolding). Best current models approach ~78–79%.",
         measures: "Real-world software engineering and bug-fixing ability",
-        source: "Jimenez et al., 2024 — scores from model technical reports & SWE-bench leaderboard"
+        lastCollected: "Leaderboard overhauled Feb 2026 (v2.0); actively updated. Top scores current as of March–April 2026. Benchmark published Oct 2023.",
+        source: "Jimenez et al., 2024 — SWE-bench leaderboard (swebench.com) & model technical reports"
     }
 };
 
@@ -94,6 +102,40 @@ const BENCHMARKS = {
 // ============================================================
 const LLM_DATA = [
     // ── OpenAI ──────────────────────────────────────────────
+    {
+        name: "GPT-5",
+        provider: "OpenAI",
+        releaseDate: "August 2025",
+        input_cost: 1.25,
+        output_cost: 10.00,
+        benchmarks: {
+            mmlu: 89.5,
+            gpqa: 88.4,
+            humaneval: 96.8,
+            math: 93.2,
+            mmlu_pro: 84.2,
+            arena_elo: 1490,
+            ifeval: 91.5,
+            swe_bench: 74.9
+        }
+    },
+    {
+        name: "GPT-5.4",
+        provider: "OpenAI",
+        releaseDate: "March 2026",
+        input_cost: 2.50,
+        output_cost: 15.00,
+        benchmarks: {
+            mmlu: 88.5,
+            gpqa: 90.4,
+            humaneval: 97.2,
+            math: 95.0,
+            mmlu_pro: 85.5,
+            arena_elo: 1520,
+            ifeval: 92.5,
+            swe_bench: 78.2
+        }
+    },
     {
         name: "GPT-4o",
         provider: "OpenAI",
@@ -419,6 +461,57 @@ const LLM_DATA = [
 
     // ── Google ──────────────────────────────────────────────
     {
+        name: "Gemini 3 Pro",
+        provider: "Google",
+        releaseDate: "Late 2025",
+        input_cost: 2.00,
+        output_cost: 12.00,
+        benchmarks: {
+            mmlu: 91.8,
+            gpqa: 88.5,
+            humaneval: 96.0,
+            math: 93.5,
+            mmlu_pro: 85.0,
+            arena_elo: 1480,
+            ifeval: 92.0,
+            swe_bench: 70.5
+        }
+    },
+    {
+        name: "Gemini 3.1 Pro",
+        provider: "Google",
+        releaseDate: "February 2026",
+        input_cost: 2.00,
+        output_cost: 12.00,
+        benchmarks: {
+            mmlu: 92.6,
+            gpqa: 94.3,
+            humaneval: 97.0,
+            math: 96.0,
+            mmlu_pro: 87.5,
+            arena_elo: 1540,
+            ifeval: 93.5,
+            swe_bench: 78.8
+        }
+    },
+    {
+        name: "Gemini 2.5 Flash-Lite",
+        provider: "Google",
+        releaseDate: "July 2025",
+        input_cost: 0.10,
+        output_cost: 0.40,
+        benchmarks: {
+            mmlu: 84.0,
+            gpqa: 68.5,
+            humaneval: 87.5,
+            math: 78.0,
+            mmlu_pro: 65.0,
+            arena_elo: 1270,
+            ifeval: 83.5,
+            swe_bench: null
+        }
+    },
+    {
         name: "Gemini 1.5 Pro",
         provider: "Google",
         input_cost: 1.25,
@@ -567,6 +660,57 @@ const LLM_DATA = [
 
     // ── xAI ─────────────────────────────────────────────────
     {
+        name: "Grok 4",
+        provider: "xAI",
+        releaseDate: "July 2025",
+        input_cost: 3.00,
+        output_cost: 15.00,
+        benchmarks: {
+            mmlu: 86.6,
+            gpqa: 88.0,
+            humaneval: 98.0,
+            math: 93.0,
+            mmlu_pro: 87.0,
+            arena_elo: 1483,
+            ifeval: 90.5,
+            swe_bench: 72.0
+        }
+    },
+    {
+        name: "Grok 4.1 Fast",
+        provider: "xAI",
+        releaseDate: "Late 2025",
+        input_cost: 0.20,
+        output_cost: 0.50,
+        benchmarks: {
+            mmlu: 84.0,
+            gpqa: 74.0,
+            humaneval: 92.0,
+            math: 85.0,
+            mmlu_pro: 74.5,
+            arena_elo: 1380,
+            ifeval: 87.0,
+            swe_bench: null
+        }
+    },
+    {
+        name: "Grok 4.20",
+        provider: "xAI",
+        releaseDate: "March 2026",
+        input_cost: 2.00,
+        output_cost: 6.00,
+        benchmarks: {
+            mmlu: 88.0,
+            gpqa: 78.5,
+            humaneval: 94.0,
+            math: 90.0,
+            mmlu_pro: 80.0,
+            arena_elo: 1420,
+            ifeval: 89.5,
+            swe_bench: null
+        }
+    },
+    {
         name: "Grok-2",
         provider: "xAI",
         input_cost: 2.00,
@@ -600,6 +744,23 @@ const LLM_DATA = [
     },
 
     // ── Mistral ─────────────────────────────────────────────
+    {
+        name: "Mistral Medium 3",
+        provider: "Mistral",
+        releaseDate: "May 2025",
+        input_cost: 0.40,
+        output_cost: 2.00,
+        benchmarks: {
+            mmlu: 83.0,
+            gpqa: 57.8,
+            humaneval: 88.0,
+            math: 90.7,
+            mmlu_pro: 76.0,
+            arena_elo: 1240,
+            ifeval: 81.5,
+            swe_bench: null
+        }
+    },
     {
         name: "Mistral Large",
         provider: "Mistral",
