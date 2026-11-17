@@ -100,6 +100,8 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if path == "/api/status":
             return self._json(self._status())
+        if path == "/api/weights/version":  # tiny, polled every couple of seconds so the page can report any change
+            return self._json({"version": weights_mod.version()})
         if path == "/api/weights":
             return self._json(weights_mod.snapshot(load_config()))
         return super().do_GET()

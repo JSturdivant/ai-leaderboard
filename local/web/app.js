@@ -695,6 +695,7 @@
     // Every change is sent to the local server ~0.4 s after the last one, which writes weights.json (outside
     // data/, so clearing the data cache never loses it) and rebuilds data/latest.json with the same weights.
     let weightsReady = false, saveTimer = null, retryTimer = null, saving = false, dirty = false, retryDelay = 5000;
+    let knownSnap = null, knownVersion = null, bannerTimer = null, checkingFile = false;  // what we last knew of weights.json
     let lastOwnSave = 0, lastSliderInput = 0, pointerDown = false, lastSavedText = "";
     function setSaveState(kind, text) {
         const el = $("saveState");
@@ -732,7 +733,11 @@
     async function initWeights() {
         weightsReady = true;
         let saved = DATA.config.user_weights || {}, caps = DATA.config.user_caps || {};
-        try { const w = await getJSON("/api/weights"); saved = w.aliases || {}; caps = w.caps || {}; } catch (e) { /* fall back to the build's copy */ }
+        try {
+            const w = await getJSON("/api/weights"); saved = w.aliases || {}; caps = w.caps || {};
+            knownSnap = { aliases: saved, caps, recommendations: w.recommendations || null }; knownVersion = w.version;
+        } catch (e) { /* fall back to the build's copy */ }
+        startWeightsWatcher();
         if (Object.keys(saved).length || Object.keys(caps).length) {
             P.weights = JSON.parse(JSON.stringify(saved)); P.capOverride = capsFromFile(caps);
             setSaveState("saved", "Your weights and caps are loaded from weights.json");
@@ -752,14 +757,19 @@
         if (!dirty) return;
         if (saving) { saveTimer = setTimeout(() => saveNow(keepalive), 150); return; }  // one request at a time
         saving = true; dirty = false;
+        const sent = { aliases: JSON.parse(JSON.stringify(P.weights)), caps: capsToFile() };  // exactly what this request carries
         try {
             const r = await fetch("/api/weights", {
                 method: "POST", keepalive, headers: { "Content-Type": "application/json", "X-Requested-With": "leaderboard" },
-                body: JSON.stringify({ aliases: P.weights, caps: capsToFile() }),
+                body: JSON.stringify(sent),
             });
             const out = await r.json().catch(() => ({}));  // always read the body, or the browser keeps the request open
             if (!r.ok) throw new Error(out.error || r.statusText);
             lastOwnSave = Date.now(); retryDelay = 5000;
+            const stored = { aliases: out.aliases || sent.aliases, caps: out.caps || sent.caps };  // the server's validated copy
+            const changes = settingsChanges(knownSnap || { aliases: {}, caps: {} }, stored);
+            knownSnap = { recommendations: null, ...(knownSnap || {}), ...stored }; knownVersion = out.version;
+            showBanner("Saved to weights.json" + (changes.length ? ": " + changes.join(", ") : ""));
             lastSavedText = "Saved to weights.json at " + new Date().toLocaleTimeString();
             if (!dirty) { setSaveState("saved", lastSavedText); setTimeout(() => showRecommendationTime(), 1300); }  // the rebuild follows ~1 s after a save
         } catch (e) {
@@ -767,6 +777,93 @@
             setSaveState("error", `Not saved (${e.message}). Retrying…`);
             retryTimer = setTimeout(() => saveNow(), retryDelay); retryDelay = Math.min(retryDelay * 2, 60000);
         } finally { saving = false; }
+    }
+    // ── a short bottom banner for every change to weights.json ───────────────────────
+    // Whatever rewrites the file (a save from this page, the recommendations after a rebuild, the CLI, a hand
+    // edit, another tab), the page notices through the file's version and says what changed, then gets out of the way.
+    const stable = (x) => JSON.stringify(x, (k, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((kk) => [kk, v[kk]])) : v));
+    const bareName = (n) => String(n || "").replace(/^[^:]+: /, "");
+    function showBanner(text) {
+        const el = $("fileBanner");
+        if (!el) return;
+        el.textContent = text; el.classList.add("show");
+        clearTimeout(bannerTimer); bannerTimer = setTimeout(() => el.classList.remove("show"), 3000);  // a newer message restarts the clock
+    }
+    // Which aliases' weights or caps differ between two snapshots ("Coding weights", "Daily cap").
+    function settingsChanges(a, b) {
+        const out = [], A = a.aliases || {}, B = b.aliases || {}, CA = a.caps || {}, CB = b.caps || {};
+        for (const k of new Set([...Object.keys(A), ...Object.keys(B)])) if (stable(A[k] ?? null) !== stable(B[k] ?? null)) out.push(`${k} weights`);
+        for (const k of new Set([...Object.keys(CA), ...Object.keys(CB)])) {
+            if (stable(k in CA ? CA[k] : "default") !== stable(k in CB ? CB[k] : "default")) out.push(`${k} cap`);
+        }
+        return out;
+    }
+    // What changed in the stored recommendations: null if nothing but the timestamp, else which #1 picks moved.
+    function recommendationChanges(old, neu) {
+        if (!neu) return null;
+        const strip = (r) => { const { generated_at, ...rest } = r || {}; return rest; };
+        if (old && stable(strip(old)) === stable(strip(neu))) return null;
+        if (!old) return { created: true, moved: [] };
+        const moved = [];
+        for (const [alias, r] of Object.entries(neu.aliases || {})) {
+            const was = ((old.aliases || {})[alias] || {}).picks, now = r.picks;
+            const w = was && was[0], n = now && now[0];
+            if ((w && w.model) !== (n && n.model)) moved.push(`${alias}: ${w ? bareName(w.name) : "none"} → ${n ? bareName(n.name) : "none"}`);
+        }
+        return { created: false, moved };
+    }
+    function describeRecommendations(rc) {
+        if (rc.created) return "recommendations written";
+        if (!rc.moved.length) return "recommendations refreshed (top picks unchanged)";
+        return `recommendations changed: ${rc.moved.slice(0, 2).join("; ")}${rc.moved.length > 2 ? ` (+${rc.moved.length - 2} more)` : ""}`;
+    }
+    // Take weights and caps that changed outside this page (a hand edit, another tab) as the new truth.
+    function adoptSettings(s) {
+        P.weights = JSON.parse(JSON.stringify(s.aliases || {})); P.capOverride = capsFromFile(s.caps);
+        invalidateFit(); renderAliases(); renderCharts(); renderTable(); renderDetail();
+        if (!$("fitModal").hidden) renderFit();
+        setSaveState("saved", "Settings reloaded from weights.json");
+    }
+    function onWeightsFileChanged(snap) {
+        const old = knownSnap || { aliases: {}, caps: {}, recommendations: null };
+        knownSnap = { aliases: snap.aliases || {}, caps: snap.caps || {}, recommendations: snap.recommendations || null };
+        knownVersion = snap.version;
+        const sc = settingsChanges(old, knownSnap), rc = recommendationChanges(old.recommendations, knownSnap.recommendations);
+        const editing = dirty || pointerDown || Date.now() - lastSliderInput < 2000;  // never pull settings out from under an edit
+        if (snap.version === null) {
+            if (!editing) adoptSettings(knownSnap);
+            return showBanner("weights.json was removed" + (editing ? " - your open edit will recreate it" : ": settings reset to the config.json defaults"));
+        }
+        const parts = [];
+        if (sc.length) {
+            if (!editing) adoptSettings(knownSnap);
+            parts.push(`edited outside this page (${sc.join(", ")}) ${editing ? "- your open edit will replace it" : "- reloaded"}`);
+        }
+        if (rc) parts.push(describeRecommendations(rc));
+        if (!parts.length) parts.push("rewritten, settings and recommendations unchanged");
+        showBanner("weights.json updated · " + parts.join(" · "));
+    }
+    async function checkWeightsFile() {
+        if (!weightsReady || saving || checkingFile || document.visibilityState === "hidden") return;
+        checkingFile = true;
+        try {
+            const { version } = await getJSON("/api/weights/version");
+            if (version === knownVersion) return;
+            const snap = await getJSON("/api/weights");
+            if (saving || snap.version === knownVersion) return;  // our own save began meanwhile and will update what we know
+            if (!knownSnap) {  // the first read failed at startup: take this one as the baseline, no banner
+                knownSnap = { aliases: snap.aliases || {}, caps: snap.caps || {}, recommendations: snap.recommendations || null }; knownVersion = snap.version;
+                return;
+            }
+            onWeightsFileChanged(snap);
+        } catch (e) { /* server busy or unreachable: the next tick tries again */ } finally { checkingFile = false; }
+    }
+    let watcherStarted = false;
+    function startWeightsWatcher() {
+        if (watcherStarted) return;
+        watcherStarted = true;
+        setInterval(checkWeightsFile, 1000);
+        document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkWeightsFile(); });
     }
     // A moment after a save the build rewrites the stored recommendations; say whether they changed.
     async function showRecommendationTime(attempt = 0) {

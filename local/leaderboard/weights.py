@@ -140,6 +140,19 @@ def _write(raw):
     write_json_atomic(weights_path(), raw, indent=2)
 
 
+def version():
+    """A cheap fingerprint of the file (modification time + size), or None when it does not exist.
+
+    It changes whenever anything rewrites the file: a save from the page, the recommendations after a rebuild,
+    the CLI, or a hand edit. The page polls it to tell you about every change.
+    """
+    try:
+        st = weights_path().stat()
+    except OSError:
+        return None
+    return f"{st.st_mtime_ns}-{st.st_size}"
+
+
 def load(cfg):
     """The saved settings: {"aliases": {alias: {cats, metrics}}, "caps": {alias: cap|None}}."""
     with _lock:
@@ -151,9 +164,10 @@ def snapshot(cfg):
     """Everything the API returns: settings, when they were saved, and the latest recommendations."""
     with _lock:
         raw = _raw()
+        ver = version()
     return {"aliases": parse(raw.get("aliases"), cfg), "caps": parse_caps(raw.get("caps"), cfg),
             "saved_at": raw.get("saved_at"), "recommendations": raw.get("recommendations"),
-            "file": weights_path().name}
+            "file": weights_path().name, "version": ver}
 
 
 def save(cfg, raw_aliases, raw_caps=None):
@@ -168,7 +182,8 @@ def save(cfg, raw_aliases, raw_caps=None):
         caps = parse_caps(raw_caps, cfg, strict=True) if raw_caps is not None else parse_caps(cur.get("caps"), cfg)
         out = {**cur, "saved_at": stamp, "aliases": aliases, "caps": caps}  # unknown keys survive; order kept
         _write(out)
-    return {"saved_at": stamp, "aliases": aliases, "caps": caps}
+        ver = version()
+    return {"saved_at": stamp, "aliases": aliases, "caps": caps, "version": ver}
 
 
 def _comparable(recs):
