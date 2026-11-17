@@ -1,12 +1,15 @@
 # LLM Cost vs. Capability — local leaderboard
 
-A leaderboard you run on your own machine. It pulls live pricing and benchmark data from consolidated
-sources, saves the latest snapshot to `data/latest.json`, and helps you choose (and sanity-check) the
-model behind each agent alias: **Free, Cheap, Daily, Big, Jumbo, Thinking, Coding, Task**.
+This is the **local** version of the leaderboard (see the [top-level README](../README.md) for how it
+relates to the planned Vercel version). It runs on your own machine, pulls live pricing and benchmark
+data from consolidated sources, saves the latest snapshot to `data/latest.json`, and helps you choose (and
+sanity-check) the model behind each agent alias: **Free, Cheap, Daily, Big, Jumbo, Thinking, Coding, Task**.
+Your tuning and the app's latest recommendation for every alias are kept in `weights.json`.
 
-Python 3.9+ standard library only. No `pip install`, no Node, no API keys.
+Python 3.9+ standard library only. No `pip install`, no Node, no API keys. Run everything from this folder:
 
 ```bash
+cd local
 python3 server.py --open
 ```
 
@@ -22,9 +25,10 @@ the data fresh in the background; leave it running and the page updates live.
   Optional 2×2 grid. **My aliases only** hides everything except the models set for your aliases, each
   labelled with its alias name.
 - **Alias picker** — for each alias, the three highest-fit *different* models under that alias's cost cap
-  (equal fits go to the cheaper one; a model sold both paid and `:free` is listed once). Set the cap with the slider (free → $0.01 → $50 → no cap, log scale) or type an
-  exact value; the two stay in sync. Type the model you use today into an alias card and it tells you its
-  rank and whether anything is both cheaper-or-equal and better.
+  (equal fits go to the cheaper one; a model sold both paid and `:free` is listed once). Set the cap with
+  the slider (free → $0.01 → $50 → no cap, log scale) or type an exact value; the two stay in sync, and
+  caps are saved to `weights.json` like the weights. Type the model you use today into an alias card and it
+  tells you its rank and whether anything is both cheaper-or-equal and better.
 - **Fit explained** — click any *fit* number (or **How is fit calculated?**) for the formula, every
   benchmark with its weight and 0→100 scale, and a table of how each model scored on each benchmark.
 - **Fit weights** — every alias card has a collapsible panel with a slider for each dimension and each
@@ -75,37 +79,67 @@ python3 refresh.py --report        # print each alias's top 3 fits in the termin
 python3 refresh.py --loop          # keep refreshing on the intervals, no web UI
 ```
 
-Example crontab (daily at 06:10): `10 6 * * * cd /path/to/ai-leaderboard && python3 refresh.py`
+Example crontab (daily at 06:10): `10 6 * * * cd /path/to/ai-leaderboard/local && python3 refresh.py`
 
 `data/latest.json` is the companion data file: every model with its channel prices, benchmark values,
 category scores, $/intelligence, alias fits and the per-alias picks. Your agent or scripts can read it
 directly. Source caches live in `data/raw/`, refresh status in `data/status.json`. Everything under
 `data/` is disposable: delete it and the next run rebuilds it.
 
-## Your saved weights (`weights.json`)
+## Your weights and the latest recommendations (`weights.json`)
 
-The fit-weight sliders are saved to **`weights.json`** in the project folder, deliberately *outside*
-`data/` so clearing the cache can't lose them. Saving is automatic: about half a second after you stop
-moving a slider the page sends the change to the local server, which writes the file and rebuilds
-`data/latest.json` with the same weights, so the page, `refresh.py --report` and anything reading
-`latest.json` all agree. The indicator beside **Alias picker** shows *Saving… / Saved / Not saved*; if a
-save fails it retries automatically, and a change made just before closing the tab is still flushed.
+**`weights.json`** (in this folder, deliberately *outside* `data/` so clearing the cache can't lose it) holds
+two things: **your settings** (fit weights and cost caps) and **the app's latest recommendation for every
+alias**.
 
-- The file is plain JSON and holds only what differs from `config.json`, e.g.
-  `{"aliases": {"Coding": {"cats": {"coding": 0.6}, "metrics": {"coding": {"swe_bench_verified": 5}}}}}`
-  (`cats` = dimension weights, `metrics` = benchmark weights per dimension, `0` = off). Edit it by hand if
-  you like (invalid entries are ignored, never fatal); changes reach the picks on the next rebuild and the
-  sliders on the next page load. Delete it to reset every alias.
-- It is yours: commit it to keep it in git, copy it to carry your tuning to another machine.
-- Weights an earlier version kept in the browser are moved into this file the first time you open the page.
-- Cost caps and the model boxes on the alias cards are still browser-only settings.
+```jsonc
+{
+  "saved_at": "2026-11-17T19:16:09+00:00",
+  "aliases": { "Coding": { "cats": {"coding": 0.6}, "metrics": {"coding": {"swe_bench_verified": 5}} } },
+  "caps":    { "Daily": 0.1, "Thinking": null },        // blended $/M; null = no cap
+  "recommendations": {
+    "generated_at": "...", "cost_basis": {"input": 3, "output": 1},
+    "data_as_of": { "openrouter": "...", "epoch": "...", ... },   // when each source was last fetched
+    "aliases": {
+      "Coding": {
+        "cap": null, "require": ["tools"], "min_context": 128000, "custom_weights": true,
+        "candidates": 124, "unscored": 165,
+        "picks": [ { "rank": 1, "model": "anthropic/claude-opus-5.5", "name": "Anthropic: Claude Opus 5.5",
+                     "fit": 95.6, "released": "2026-09-22",
+                     "cost": { "blended": 8.0, "input": 4.0, "output": 20.0, "channel": "primary", "provider": "Anthropic" } },
+                   { "rank": 2, ... }, { "rank": 3, ... } ]
+      }, ...
+```
+
+**Settings** are saved automatically: about half a second after you stop moving a slider the page sends the
+change to the local server, which writes the file. The indicator beside **Alias picker** shows
+*Saving… / Saved / Not saved*; if a save fails it retries, and a change made just before closing the tab is
+still flushed. `aliases` and `caps` are plain JSON and hold only what differs from `config.json`
+(`cats` = dimension weights, `metrics` = benchmark weights per dimension, `0` = off). Edit them by hand if you
+like: invalid entries are ignored, never fatal, and any extra keys you add are kept. Delete the file to reset
+every alias.
+
+**Recommendations** are rewritten after *every* rebuild, so they follow the latest benchmark and cost data
+and your saved weights and caps: a slider change updates them about a second later (the status line then
+adds *recommendations updated*), and every data refresh and `refresh.py` run does the same. `picks[0]` is the
+recommendation; `model` is the OpenRouter-style id, and `cost.channel` / `cost.provider` say where it is
+cheapest right now (the lab itself, OpenRouter, or Nous Portal), so an agent can read the file and route
+accordingly. They always match what the dashboard shows at the config cost basis (`cost.blend`, default 3:1).
+The file is only rewritten when something other than the timestamp changed.
+
+- Edit `aliases` and `caps`, never `recommendations`: it is overwritten on the next rebuild.
+- It is yours: commit it to keep it in git, or copy it to carry your tuning to another machine.
+- If you saved weights before the app moved into `local/`, the old `weights.json` at the repository root is
+  moved here the first time the app runs (the original is kept as `weights.json.moved-to-local`).
+- Weights and caps an earlier version kept in the browser are moved into this file the first time you open
+  the page. The model boxes on the alias cards are still browser-only.
 - Use another location with the `LEADERBOARD_WEIGHTS` environment variable.
 
 ## Tuning (`config.json`)
 
 - `aliases` — cost cap (`max_cost`, `null` = no cap), requirements (`free`, `tools`, `reasoning`),
   `min_context`, and how much each use case counts toward that alias's fit.
-  Caps can also be edited live on each card (kept in your browser).
+  Caps can also be edited live on each card (saved to `weights.json`, which then wins over `max_cost`).
   To set different *default* benchmark weights for one alias, add `metric_weights` (only the benchmarks you
   want to change; `0` switches one off), e.g.
   `"Coding": { "weights": {"coding": 0.6, "agentic": 0.3, "reasoning": 0.1},
@@ -159,9 +193,11 @@ save fails it retries automatically, and a change made just before closing the t
 ## Development
 
 ```bash
+cd local
 python3 -m unittest discover -s tests -t .
 ```
 
 Layout: `leaderboard/sources/` one collector per source · `names.py` model-name matching ·
-`scoring.py` pure maths · `build.py` joins everything into `data/latest.json` · `server.py` + `web/` UI.
-Chart.js is vendored in `web/vendor/`, so the page works offline.
+`scoring.py` pure maths · `build.py` joins everything into `data/latest.json` · `weights.py` the saved
+settings and where recommendations are stored · `recommend.py` builds the recommendations ·
+`server.py` + `web/` UI. Chart.js is vendored in `web/vendor/`, so the page works offline.
