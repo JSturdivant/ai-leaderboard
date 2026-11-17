@@ -105,7 +105,7 @@
         <section class="block">
             <div class="block-head">
                 <h2 class="section-title">Alias picker</h2>
-                <p class="block-note">Best model for each of your aliases under its cost cap (drag the slider or type a value). <b>Top fit</b> = highest score. <b>Best value</b> = cheapest model within <span id="tolPct">10</span>% of the top fit. Costs use the cost basis selected in the matrix controls. <b>Fit</b> blends the four use-case scores with weights per alias: click any fit number, or <i>How is fit calculated?</i>, to see every benchmark and how each model scored.</p>
+                <p class="block-note">Best model for each of your aliases under its cost cap (drag the slider or type a value). <b>Top fit</b> = highest score. <b>Best value</b> = cheapest model within <span id="tolPct">10</span>% of the top fit. Costs use the cost basis selected in the matrix controls. <b>Fit</b> blends the four use-case scores with weights per alias: click any fit number, or <i>How is fit calculated?</i>, to see every benchmark and how each model scored. Each card's <i>Fit weights</i> sliders set how much every dimension and benchmark counts for that alias; the <a href="#glossary">Glossary</a> explains them all.</p>
             </div>
             <div class="alias-grid" id="aliasGrid"></div>
             <datalist id="modelList"></datalist>
@@ -154,6 +154,12 @@
             <h2 class="section-title">Sources &amp; data freshness</h2>
             <div class="table-wrapper"><table class="plain" id="sourcesTable"></table></div>
             <details class="diag" id="diagnostics"></details>
+        </section>
+
+        <section class="block" id="glossary">
+            <h2 class="section-title">Glossary</h2>
+            <p class="block-note">What each dimension and benchmark means, how to read its numbers, and where it comes from. Weights shown are the config.json defaults; the alias sliders change them per alias.</p>
+            <div id="glossaryBody"></div>
         </section>
     </main>
 

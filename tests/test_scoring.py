@@ -38,6 +38,16 @@ class CompositeTests(unittest.TestCase):
         self.assertIsNone(sc.composite({}, self.W, 0.35, 0.6))
 
 
+class ZeroWeightTests(unittest.TestCase):
+    def test_composite_ignores_zero_weight_metrics(self):
+        r = sc.composite({"a": 80, "b": 40}, {"a": 3, "b": 0}, 0.35, 0.6)
+        self.assertEqual((r["s"], r["cov"], r["n"]), (80.0, 1.0, 1))
+        self.assertIsNone(sc.composite({"a": 80}, {"a": 0}, 0.35, 0.6))
+
+    def test_fit_ignores_zero_weight_categories(self):
+        self.assertEqual(sc.fit_score({"chat": 80, "coding": 10}, {"chat": 1, "coding": 0}), (80.0, 1.0))
+
+
 class ValueTests(unittest.TestCase):
     def test_usd_per_100(self):
         self.assertAlmostEqual(sc.usd_per_100(0.5, 50, 5), 1.0)

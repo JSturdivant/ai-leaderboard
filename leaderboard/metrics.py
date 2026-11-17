@@ -60,3 +60,74 @@ SOURCE_LABELS = {
     "epoch": "Epoch AI Benchmarking Hub",
     "arena": "Arena (LMArena)",
 }
+
+
+# Plain-language glossary text for the UI: what the benchmark measures, and its main caveat.
+EXPLAIN = {
+    "aa_intelligence": (
+        "Artificial Analysis's headline score: one number combining many evaluations of knowledge, reasoning, maths, coding and agentic tasks. A good general-ability anchor.",
+        "The mix of evaluations behind it changes between index versions, and OpenRouter republishes it for only some models."),
+    "aa_coding": (
+        "Artificial Analysis's coding composite, built from several programming and scientific-coding evaluations.",
+        "Covers fewer models than the intelligence index, and the evaluations included change between versions."),
+    "aa_agentic": (
+        "Artificial Analysis's composite for agentic work: using tools and completing multi-step tasks without help.",
+        "The newest of the three AA indices, so many cheaper models don't have it yet."),
+    "design_arena_code": (
+        "Elo rating from people voting between two AI-generated UI or code outputs on Design Arena (its code categories).",
+        "Reflects how good the output looks and works to a human voter, not whether the logic is correct. Low default weight."),
+    "epoch_eci": (
+        "Epoch AI's Capabilities Index: a statistical model that fits one ability number per model across many benchmarks, so models tested on different sets stay comparable.",
+        "A fitted estimate, so it can shift slightly when Epoch adds benchmarks."),
+    "swe_bench_verified": (
+        "Fix real GitHub issues from popular Python projects. A fix counts only if the project's own tests pass. 'Verified' is the human-checked 500-task subset.",
+        "Close to saturated for the best models, depends on the agent scaffold used, and Epoch has run only some models."),
+    "gpqa_diamond": (
+        "Hard multiple-choice science questions (biology, physics, chemistry) written and checked by experts to be unsearchable. Random guessing scores 25%.",
+        "Frontier models are near the ceiling, so it separates mid-tier models better than top ones."),
+    "hle": (
+        "Humanity's Last Exam: expert-written questions across many fields, built to stay hard after other benchmarks saturated.",
+        "Few models are scored, mostly frontier ones, so cheaper models often show no value."),
+    "arc_agi_2": (
+        "Novel grid puzzles that test learning a new rule from a few examples, designed to resist memorisation.",
+        "Results depend on reasoning effort (and cost per task); each model's best result is kept."),
+    "frontiermath": (
+        "Research-level maths problems with exact answers, kept private by Epoch (tiers 1-3, version 2).",
+        "Only strong models are evaluated."),
+    "aider_polyglot": (
+        "Edit existing code to solve 225 hard Exercism exercises across C++, Go, Java, JavaScript, Python and Rust. The score is the share solved.",
+        "Now mostly covers older models, so newer ones often lack it."),
+    "scicode": (
+        "Write code for problems drawn from real scientific research workflows (physics, maths, chemistry, biology, materials).",
+        "Scores are low even for strong models, so absolute differences are small."),
+    "terminal_bench": (
+        "An AI agent works in a Linux terminal to complete real tasks such as building, debugging and system setup. The score is the share of tasks solved.",
+        "Results depend heavily on the agent harness, so the median across harnesses is used rather than the best."),
+    "apex_agents": (
+        "Long-horizon tasks from professional work (such as finance, consulting and law) that an agent must carry out with tools. Score is pass@1: solved on the first attempt.",
+        "A newer benchmark with a smaller set of models."),
+    "arena_text": (
+        "Arena (LMArena): people compare two anonymous answers to their own prompts and vote. Votes become an Elo-style rating. This is the style-controlled overall board, which discounts answer length and formatting.",
+        "Measures what people prefer, which is not always what is most accurate."),
+    "arena_coding": (
+        "The same Arena text votes, restricted to prompts about coding.",
+        "Chat-style coding questions, not whole-repository engineering."),
+    "arena_hard_prompts": (
+        "Arena text votes restricted to the hardest prompts: complex, specific, multi-part.",
+        "A smaller sample than the overall board."),
+    "arena_instruction_following": (
+        "Arena text votes on prompts with explicit constraints such as format, length or content rules.",
+        "A smaller sample than the overall board."),
+    "arena_multi_turn": (
+        "Arena text votes on conversations with several back-and-forth turns, which is how agent chat really goes.",
+        "A smaller sample than the overall board."),
+    "arena_webdev": (
+        "Arena WebDev: people vote on complete web pages and apps that models build from a prompt.",
+        "Judges the visible result, so it favours polished interfaces."),
+    "arena_agent": (
+        "Arena's agent leaderboard, drawn from real agentic coding sessions rather than a fixed test set.",
+        "Few models are listed, and the score is a relative scale, not a percentage."),
+}
+for _key, (_what, _caveat) in EXPLAIN.items():
+    METRICS[_key]["explain"] = _what
+    METRICS[_key]["caveat"] = _caveat

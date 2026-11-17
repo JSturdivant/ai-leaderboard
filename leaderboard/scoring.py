@@ -42,15 +42,16 @@ def blended(price_in, price_out, blend):
 
 
 def composite(norm_scores, weights, min_coverage, confident_coverage):
-    """norm_scores: {metric: 0-100}; weights: {metric: w}. -> dict or None."""
-    total = sum(weights.values())
+    """norm_scores: {metric: 0-100}; weights: {metric: w}. -> dict or None. Weights <= 0 are ignored."""
+    weights = {k: w for k, w in weights.items() if w > 0}
+    total = math.fsum(weights.values())
     have = {k: w for k, w in weights.items() if norm_scores.get(k) is not None}
     if not have or total <= 0:
         return None
-    cov = sum(have.values()) / total
+    cov = math.fsum(have.values()) / total
     if cov < min_coverage:
         return None
-    s = sum(norm_scores[k] * w for k, w in have.items()) / sum(have.values())
+    s = math.fsum(norm_scores[k] * w for k, w in have.items()) / math.fsum(have.values())
     return {"s": round(s, 1), "cov": round(cov, 2), "n": len(have), "confident": cov >= confident_coverage}
 
 
@@ -80,12 +81,13 @@ def fit_score(cat_scores, weights, min_share=0.6):
     Returns (fit, share) where share is the fraction of the alias's weight that had data,
     or (None, share) when that is below `min_share`.
     """
-    total = sum(weights.values())
+    weights = {c: w for c, w in weights.items() if w > 0}
+    total = math.fsum(weights.values())
     have = {c: w for c, w in weights.items() if cat_scores.get(c) is not None}
-    share = sum(have.values()) / total if total else 0.0
+    share = math.fsum(have.values()) / total if total else 0.0
     if not have or share < min_share:
         return None, round(share, 2)
-    return round(sum(cat_scores[c] * w for c, w in have.items()) / sum(have.values()), 1), round(share, 2)
+    return round(math.fsum(cat_scores[c] * w for c, w in have.items()) / math.fsum(have.values()), 1), round(share, 2)
 
 
 def eligible(row, alias, cost):

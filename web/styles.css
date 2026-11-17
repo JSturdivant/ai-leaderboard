@@ -299,3 +299,52 @@ td.num { font-variant-numeric: tabular-nums; }
 /* ========== Links ========== */
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
+
+/* ========== Fit weights panel (per alias card) ========== */
+details.weights { border-top: 1px solid var(--border-subtle); padding-top: 8px; }
+details.weights summary { cursor: pointer; font-size: 0.8rem; font-weight: 700; color: var(--text-secondary); list-style-position: inside; }
+details.weights summary:hover { color: var(--text-primary); }
+.badge { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px; font-size: 0.66rem; font-weight: 700; background: rgba(251, 191, 36, 0.16); color: var(--warn); vertical-align: 1px; }
+.w-panel { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.w-hint { font-size: 0.74rem; color: var(--text-muted); line-height: 1.45; }
+.w-hint b { color: var(--text-secondary); }
+.w-dim { border-left: 2px solid var(--border-color); padding-left: 8px; }
+.w-row { display: grid; grid-template-columns: minmax(70px, 118px) 1fr 38px; align-items: center; gap: 8px; min-height: 22px; }
+.w-row.dim { margin-bottom: 2px; }
+.w-row.dim .w-name { font-weight: 700; color: var(--text-primary); }
+.w-name { font-size: 0.74rem; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+a.w-name { cursor: pointer; }
+.w-row input[type="range"] { width: 100%; accent-color: var(--accent); margin: 0; cursor: pointer; }
+.w-row.dim input[type="range"] { accent-color: var(--warn); }
+.w-val { font-size: 0.72rem; text-align: right; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.w-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.w-snippet { font-family: var(--mono); font-size: 0.7rem; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px 10px; overflow: auto; max-height: 220px; white-space: pre; user-select: all; }
+.custom-note { background: rgba(251, 191, 36, 0.12); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 0.84rem; margin: 6px 0 10px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.fit-table a, .plain a[data-gloss] { cursor: pointer; }
+
+/* ========== Glossary ========== */
+#glossary h3 { font-size: 1.02rem; margin: 22px 0 10px; }
+.gl-group { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin: 16px 0 8px; }
+.gl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 12px; }
+.gl-item { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); padding: 14px 16px; font-size: 0.84rem; color: var(--text-secondary); transition: box-shadow 0.4s ease, border-color 0.4s ease; scroll-margin-top: 80px; }
+.gl-item h4 { font-size: 0.95rem; color: var(--text-primary); margin-bottom: 6px; }
+.gl-item p { line-height: 1.5; margin-bottom: 6px; }
+.gl-item a { cursor: pointer; }
+.gl-meta { font-size: 0.78rem; }
+.gl-meta b, .gl-caveat b { color: var(--text-primary); }
+.gl-caveat { font-size: 0.78rem; color: var(--text-muted); }
+.gl-facts { display: grid; grid-template-columns: 1fr; gap: 3px; margin: 8px 0; font-size: 0.78rem; }
+.gl-facts > div { display: grid; grid-template-columns: 128px 1fr; gap: 8px; }
+.gl-facts dt { color: var(--text-muted); }
+.gl-facts dd { color: var(--text-secondary); }
+.gl-item.flash { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.gl-terms { display: grid; grid-template-columns: minmax(150px, 220px) 1fr; gap: 0; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); overflow: hidden; font-size: 0.84rem; }
+.gl-terms dt, .gl-terms dd { padding: 10px 14px; border-top: 1px solid var(--border-subtle); }
+.gl-terms dt:first-of-type, .gl-terms dt:first-of-type + dd { border-top: none; }
+.gl-terms dt { font-weight: 700; color: var(--text-primary); }
+.gl-terms dd { color: var(--text-secondary); line-height: 1.5; }
+@media (max-width: 760px) {
+    .gl-grid { grid-template-columns: 1fr; }
+    .gl-terms { grid-template-columns: 1fr; }
+    .gl-terms dd { border-top: none; padding-top: 0; }
+}

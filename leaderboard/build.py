@@ -98,6 +98,22 @@ def _aggregate(metric, recs):
     return {"v": top["value"], "label": top["label"], "n": len(recs)}
 
 
+def _alias_cat_scores(row, alias_cfg, cats, scales, sc_cfg):
+    """Category scores as one alias sees them: the shared ones, unless that alias re-weights the
+    benchmarks of a category via aliases.<name>.metric_weights ({category: {metric: weight}})."""
+    over = alias_cfg.get("metric_weights") or {}
+    norm = {m: d.get("s") for m, d in row["metrics"].items()}
+    out = {}
+    for c, c_cfg in cats.items():
+        if c in over:
+            w = {m: wt for m, wt in {**c_cfg["metrics"], **over[c]}.items() if m in scales}
+            res = sc.composite(norm, w, sc_cfg["min_coverage"], sc_cfg["confident_coverage"]) if w else None
+        else:
+            res = row["scores"].get(c)
+        out[c] = res["s"] if res else None
+    return out
+
+
 # ── build ─────────────────────────────────────────────────────────────────────────────
 def build(cfg, now=None):
     now = now or time.time()
@@ -255,7 +271,7 @@ def build(cfg, now=None):
     alias_out = {}
     for name, a in aliases.items():
         for r in rows.values():
-            fit, share = sc.fit_score({c: (r["scores"].get(c) or {}).get("s") for c in cats}, a["weights"], a.get("min_share", 0.6))
+            fit, share = sc.fit_score(_alias_cat_scores(r, a, cats, scales, sc_cfg), a["weights"], a.get("min_share", 0.6))
             r.setdefault("fit", {})[name] = fit
             r.setdefault("fit_cov", {})[name] = share
         allc = [{"id": r["id"], "cost": r["cost"]["lowest"]["blended"], "fit": r["fit"][name]} for r in rows.values() if r["fit"][name] is not None]
@@ -311,7 +327,8 @@ def build(cfg, now=None):
         "generated_ts": now,
         "config": {
             "blend": blend,
-            "categories": {k: {"label": c["label"], "short": c.get("short", k.title()), "metrics": c["metrics"]} for k, c in cats.items()},
+            "categories": {k: {"label": c["label"], "short": c.get("short", k.title()), "explain": c.get("explain", ""), "metrics": c["metrics"]}
+                           for k, c in cats.items()},
             "aliases": aliases,
             "alias_value_tolerance": cfg.get("alias_value_tolerance", 0.1),
             "current_models": cfg.get("current_models") or {},

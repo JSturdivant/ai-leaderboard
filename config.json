@@ -53,6 +53,7 @@
     "coding": {
       "label": "Coding / Engineering",
       "short": "Coding",
+      "explain": "How well a model writes, fixes and reviews software: patching real repositories, solving programming exercises and building working apps and UIs. Matters most for your Coding alias and for agent loops that edit code.",
       "metrics": {
         "aa_coding": 3,
         "swe_bench_verified": 2,
@@ -66,6 +67,7 @@
     "agentic": {
       "label": "Agentic task execution",
       "short": "Agentic",
+      "explain": "How reliably a model does multi-step work on its own: choosing and calling tools, working in a terminal, recovering from errors and finishing long tasks. The key dimension for your Task alias.",
       "metrics": {
         "aa_agentic": 3,
         "terminal_bench": 2,
@@ -76,6 +78,7 @@
     "reasoning": {
       "label": "Reasoning & problem solving",
       "short": "Reasoning",
+      "explain": "How well a model solves hard problems that need careful multi-step thought: graduate-level science, maths, abstract puzzles and expert questions. The key dimension for your Thinking alias.",
       "metrics": {
         "aa_intelligence": 2,
         "epoch_eci": 2,
@@ -89,6 +92,7 @@
     "chat": {
       "label": "Everyday agent chat",
       "short": "Chat",
+      "explain": "How useful and pleasant the model is in everyday conversation as judged by people: following instructions, handling multi-turn dialogue, answering clearly. The key dimension for Free, Cheap and Daily.",
       "metrics": {
         "arena_text": 3,
         "arena_instruction_following": 1.5,

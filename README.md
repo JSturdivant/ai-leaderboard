@@ -27,6 +27,12 @@ the data fresh in the background; leave it running and the page updates live.
   alias card and it tells you its rank and whether anything is both cheaper-or-equal and better.
 - **Fit explained** — click any *fit* number (or **How is fit calculated?**) for the formula, every
   benchmark with its weight and 0→100 scale, and a table of how each model scored on each benchmark.
+- **Fit weights** — every alias card has a collapsible panel with a slider for each dimension and each
+  benchmark. The % beside a slider is that item's share of the alias's fit (0 turns it off); the picks,
+  matrix and dialog update as you drag. Edits are kept in your browser, marked *custom*, and can be reset
+  or exported with **Copy config snippet** to make them permanent (see `metric_weights` below).
+- **Glossary** (bottom of the page) — what each dimension and benchmark means, how to read its scale, its
+  source, which dimensions use it, the main caveat, and the key terms (fit, $/100 pts, frontier, thin, …).
 - **$ / Intelligence leaderboard** — sortable, filterable table across all four dimensions.
   `$/100 pts = blended $/M tokens ÷ score × 100`: what 100 points of capability would cost at that model's
   efficiency (lower is better).
@@ -80,6 +86,11 @@ directly. Source caches live in `data/raw/`, refresh status in `data/status.json
 - `aliases` — cost cap (`max_cost`, `null` = no cap), requirements (`free`, `tools`, `reasoning`),
   `min_context`, and how much each use case counts toward that alias's fit.
   Caps can also be edited live on each card (kept in your browser).
+  To weight benchmarks differently for one alias, add `metric_weights` (only the benchmarks you want to
+  change; `0` switches one off), e.g.
+  `"Coding": { "weights": {"coding": 0.6, "agentic": 0.3, "reasoning": 0.1},
+  "metric_weights": {"coding": {"swe_bench_verified": 5, "arena_webdev": 0}} }`,
+  then `python3 refresh.py --build-only`. The browser sliders produce exactly this via *Copy config snippet*.
 - `current_models` — the model you run for each alias today, e.g. `"Daily": "z-ai/glm-5.3-flash"`.
   The boxes on the alias cards override this (kept in your browser). Both feed the **My aliases only**
   matrix view.
@@ -106,6 +117,8 @@ directly. Source caches live in `data/raw/`, refresh status in `data/status.json
    A missing score is never counted as 0: its weight is spread over the categories the model does have,
    and the model needs ≥60% of the alias's weight (`min_share`, 40% for Free) to be ranked at all.
    The fit dialog shows this exactly, including the points each benchmark adds to a model's fit.
+   The browser recomputes fits for custom slider weights with the same rules and the same exactly-rounded
+   arithmetic (`math.fsum`), so it matches what the build would produce for the same weights.
 4. Benchmarks are joined to models by exact normalized name, then by model family (snapshot date
    stripped; flagged *family* in the detail view). There is no fuzzy matching.
 5. Reasoning-effort variants of one model collapse to the best score; Terminal-Bench uses the median
