@@ -18,6 +18,12 @@ def load_config():
     return cfg
 
 
+def load_user_weights(cfg):
+    """Fit-weight overrides saved from the UI (weights.json), validated against the config."""
+    from . import weights
+    return weights.load(cfg)
+
+
 def raw_path(name):
     return RAW_DIR / f"{name}.json"
 

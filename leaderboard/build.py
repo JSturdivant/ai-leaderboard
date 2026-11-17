@@ -3,6 +3,7 @@
 import datetime as dt
 import re
 import statistics
+import threading
 import time
 
 from . import LATEST
@@ -10,9 +11,11 @@ from . import scoring as sc
 from .metrics import METRICS, SOURCE_LABELS
 from .names import NameIndex, slug, strip_date
 from .sources import SOURCES
-from .store import load_raw, load_status
+from .store import load_raw, load_status, load_user_weights
 from .util import log, write_json_atomic
+from .weights import merge_alias
 
+_write_lock = threading.Lock()
 CHANNELS = ("primary", "openrouter", "nous")  # tie-break order for "lowest"
 SCHEMA = 1
 
@@ -267,16 +270,18 @@ def build(cfg, now=None):
             r.setdefault("frontier", {})[cat] = r["id"] in front
 
     # ── 6. alias fit + picks ──────────────────────────────────────────────────────────
-    aliases = cfg["aliases"]
+    aliases = cfg["aliases"]  # config.json defaults, echoed to the UI as the "reset" baseline
+    user_weights = load_user_weights(cfg)  # weights.json overlay saved from the UI
     alias_out = {}
-    for name, a in aliases.items():
+    for name, a in ((n, merge_alias(a0, user_weights.get(n))) for n, a0 in aliases.items()):
         for r in rows.values():
             fit, share = sc.fit_score(_alias_cat_scores(r, a, cats, scales, sc_cfg), a["weights"], a.get("min_share", 0.6))
             r.setdefault("fit", {})[name] = fit
             r.setdefault("fit_cov", {})[name] = share
-        allc = [{"id": r["id"], "cost": r["cost"]["lowest"]["blended"], "fit": r["fit"][name]} for r in rows.values() if r["fit"][name] is not None]
+        allc = [{"id": r["id"], "base": r["base"], "cost": r["cost"]["lowest"]["blended"], "fit": r["fit"][name]}
+                for r in rows.values() if r["fit"][name] is not None]
         ok = [c for c in allc if sc.eligible(rows[c["id"]], a, c["cost"])]
-        picks = sc.alias_picks(ok, cfg.get("alias_value_tolerance", 0.1))
+        picks = sc.alias_picks(ok)
         picks["unscored"] = sum(1 for r in rows.values() if r["fit"][name] is None and sc.eligible(r, a, r["cost"]["lowest"]["blended"]))
         picks["current"] = sc.validate_current((cfg.get("current_models") or {}).get(name), ok, allc, picks)
         picks["ranked"] = picks["ranked"][:15]
@@ -330,7 +335,7 @@ def build(cfg, now=None):
             "categories": {k: {"label": c["label"], "short": c.get("short", k.title()), "explain": c.get("explain", ""), "metrics": c["metrics"]}
                            for k, c in cats.items()},
             "aliases": aliases,
-            "alias_value_tolerance": cfg.get("alias_value_tolerance", 0.1),
+            "user_weights": user_weights,
             "current_models": cfg.get("current_models") or {},
             "age": cfg["age"],
             "score_floor_for_ratio": sc_cfg["score_floor_for_ratio"],
@@ -346,6 +351,7 @@ def build(cfg, now=None):
 
 def build_and_write(cfg):
     data = build(cfg)
-    write_json_atomic(LATEST, data)
+    with _write_lock:  # the scheduler and a weights save can both rebuild; never interleave the two
+        write_json_atomic(LATEST, data)
     log.info("wrote %s (%d models)", LATEST, len(data["models"]))
     return data

@@ -109,24 +109,29 @@ def eligible(row, alias, cost):
     return True
 
 
-def alias_picks(cands, tolerance):
+def alias_picks(cands):
     """cands: [{id, cost, fit}] already filtered by eligibility.
 
-    Returns top-fit pick, best-value pick (cheapest within `tolerance` of the top fit),
-    the cost/fit efficient frontier, and the full ranking.
+    Returns the full ranking by fit (ties go to the cheaper model), the top pick, the top three
+    *different* models (`shortlist`: a model sold two ways, e.g. paid and ':free', appears once,
+    as its cheaper row), and the cost/fit efficient frontier.
     """
     cands = [c for c in cands if c["fit"] is not None]
     if not cands:
-        return {"top": None, "best_value": None, "frontier": [], "ranked": [], "n": 0}
+        return {"top": None, "shortlist": [], "frontier": [], "ranked": [], "n": 0}
     ranked = sorted(cands, key=lambda c: (-c["fit"], c["cost"]))
-    top = ranked[0]
-    near = [c for c in cands if c["fit"] >= top["fit"] * (1 - tolerance)]
-    value = sorted(near, key=lambda c: (c["cost"], -c["fit"]))[0]
-    frontier = pareto([(c["id"], c["cost"], c["fit"]) for c in cands])
+    seen, shortlist = set(), []
+    for c in ranked:
+        key = c.get("base", c["id"])
+        if key not in seen:
+            seen.add(key)
+            shortlist.append(c["id"])
+            if len(shortlist) == 3:
+                break
     return {
-        "top": top["id"],
-        "best_value": value["id"],
-        "frontier": frontier,
+        "top": ranked[0]["id"],
+        "shortlist": shortlist,
+        "frontier": pareto([(c["id"], c["cost"], c["fit"]) for c in cands]),
         "ranked": [c["id"] for c in ranked],
         "n": len(cands),
     }

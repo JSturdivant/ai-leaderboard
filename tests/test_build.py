@@ -29,7 +29,6 @@ def cfg():
             "Cheap": {"max_cost": 1.0, "weights": {"coding": 0.5, "reasoning": 0.5}},
             "Free": {"max_cost": 0, "require": ["free"], "min_share": 0.4, "weights": {"coding": 0.5, "reasoning": 0.5}},
         },
-        "alias_value_tolerance": 0.1,
         "current_models": {"Cheap": "acme/gamma-2"},
         "age": {"fresh_days": 90, "faded_days": 450, "min_opacity": 0.12},
         "name_overrides": {},
@@ -95,7 +94,8 @@ RAW = {
 class BuildTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        with mock.patch.object(B, "load_raw", side_effect=lambda n: RAW.get(n)), mock.patch.object(B, "load_status", return_value={}):
+        with mock.patch.object(B, "load_raw", side_effect=lambda n: RAW.get(n)), mock.patch.object(B, "load_status", return_value={}), \
+                mock.patch.object(B, "load_user_weights", return_value={}):
             cls.d = B.build(cfg(), now=NOW)
         cls.by = {m["id"]: m for m in cls.d["models"]}
 
@@ -170,12 +170,13 @@ class AliasMetricWeightTests(unittest.TestCase):
     """aliases.<name>.metric_weights re-weights benchmarks for that alias only."""
 
     @staticmethod
-    def run_build(mutate):
+    def run_build(mutate, user=None, whole=False):
         c = cfg()
         mutate(c)
-        with mock.patch.object(B, "load_raw", side_effect=lambda n: RAW.get(n)), mock.patch.object(B, "load_status", return_value={}):
+        with mock.patch.object(B, "load_raw", side_effect=lambda n: RAW.get(n)), mock.patch.object(B, "load_status", return_value={}), \
+                mock.patch.object(B, "load_user_weights", return_value=user or {}):
             d = B.build(c, now=NOW)
-        return {m["id"]: m for m in d["models"]}
+        return d if whole else {m["id"]: m for m in d["models"]}
 
     def test_zeroing_a_benchmark_changes_only_that_alias(self):
         def zero_gpqa(c):
@@ -188,6 +189,25 @@ class AliasMetricWeightTests(unittest.TestCase):
         # other aliases and the shared category scores are untouched
         self.assertEqual(a0["fit"]["Free"], a1["fit"]["Free"])
         self.assertEqual(a0["scores"], a1["scores"])
+
+    def test_saved_weights_overlay_matches_the_same_weights_in_config(self):
+        """weights.json (the UI's saved file) and aliases.<n>.metric_weights must give identical results."""
+        def via_config(c):
+            c["aliases"]["Cheap"].update(min_share=0.4, metric_weights={"reasoning": {"gpqa_diamond": 0}})
+        def min_share_only(c):
+            c["aliases"]["Cheap"]["min_share"] = 0.4
+        overlay = {"Cheap": {"metrics": {"reasoning": {"gpqa_diamond": 0}}}}
+        a = self.run_build(via_config)
+        b = self.run_build(min_share_only, user=overlay)
+        self.assertEqual({i: m["fit"]["Cheap"] for i, m in a.items()}, {i: m["fit"]["Cheap"] for i, m in b.items()})
+        self.assertEqual(b["acme/gamma-2"]["fit"]["Cheap"], 20.0)
+
+    def test_overlay_changes_dimension_weights_and_is_echoed_next_to_the_defaults(self):
+        d = self.run_build(lambda c: None, user={"Cheap": {"cats": {"coding": 1.0, "reasoning": 0.0}}}, whole=True)
+        by = {m["id"]: m for m in d["models"]}
+        self.assertEqual(by["acme/gamma-2"]["fit"]["Cheap"], by["acme/gamma-2"]["scores"]["coding"]["s"])  # reasoning switched off
+        self.assertEqual(d["config"]["user_weights"], {"Cheap": {"cats": {"coding": 1.0, "reasoning": 0.0}}})
+        self.assertEqual(d["config"]["aliases"]["Cheap"]["weights"], {"coding": 0.5, "reasoning": 0.5})  # config.json defaults, for "reset"
 
     def test_default_fit_unchanged_without_overrides(self):
         a = self.run_build(lambda c: None)["acme/alpha-1"]
