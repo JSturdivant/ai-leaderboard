@@ -178,6 +178,22 @@ class FileTests(unittest.TestCase):
         W.write_recommendations(self.RECS)
         self.assertEqual(json.loads(self.path.read_text())["my_notes"], "keep me")
 
+    def test_version_changes_on_every_kind_of_write_and_is_none_without_a_file(self):
+        self.assertIsNone(W.version())
+        W.save(CFG, {})
+        v1 = W.version()
+        self.assertTrue(v1)
+        self.assertEqual(W.version(), v1)                        # reading does not change it
+        W.save(CFG, {"Coding": {"cats": {"coding": 0.6}}})       # a settings save
+        v2 = W.version()
+        W.write_recommendations(self.RECS)                       # a rebuild storing recommendations
+        v3 = W.version()
+        self.path.write_text(self.path.read_text() + " ")         # a hand edit (same content, different size)
+        v4 = W.version()
+        self.assertEqual(len({v1, v2, v3, v4}), 4)
+        self.assertEqual(W.save(CFG, {})["version"], W.version())  # the save reports the version it produced
+        self.assertEqual(W.snapshot(CFG)["version"], W.version())
+
     def test_missing_or_corrupt_file_means_no_overrides(self):
         empty = {"aliases": {}, "caps": {}}
         self.assertEqual(W.load(CFG), empty)

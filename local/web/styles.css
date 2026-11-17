@@ -250,8 +250,18 @@ td.num { font-variant-numeric: tabular-nums; }
 .err-text { color: var(--bad); }
 
 .footer { text-align: center; color: var(--text-muted); font-size: 0.78rem; margin-top: 24px; }
+/* a short confirmation along the bottom edge whenever weights.json changes; it fades out by itself */
+.file-banner {
+    position: fixed; left: 50%; bottom: 16px; z-index: 30; max-width: min(720px, calc(100vw - 32px));
+    transform: translate(-50%, 12px); opacity: 0; visibility: hidden; pointer-events: none;
+    background: var(--bg-card); color: var(--text-primary); border: 1px solid var(--accent); border-left-width: 4px;
+    padding: 9px 16px; border-radius: var(--radius-sm); font-size: 0.84rem; line-height: 1.35; box-shadow: var(--shadow);
+    transition: opacity 0.25s ease, transform 0.25s ease, visibility 0s linear 0.25s;
+}
+.file-banner.show { opacity: 1; visibility: visible; transform: translate(-50%, 0); transition-delay: 0s; }
+@media (prefers-reduced-motion: reduce) { .file-banner { transition: none; } }
 .toast {
-    position: fixed; bottom: 22px; right: 22px; background: var(--accent); color: #fff; padding: 10px 16px; border-radius: var(--radius-sm);
+    position: fixed; bottom: 70px; right: 22px; background: var(--accent); color: #fff; padding: 10px 16px; border-radius: var(--radius-sm);
     font-size: 0.86rem; box-shadow: var(--shadow); z-index: 20;
 }
 

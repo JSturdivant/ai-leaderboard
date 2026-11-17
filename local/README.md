@@ -127,6 +127,16 @@ cheapest right now (the lab itself, OpenRouter, or Nous Portal), so an agent can
 accordingly. They always match what the dashboard shows at the config cost basis (`cost.blend`, default 3:1).
 The file is only rewritten when something other than the timestamp changed.
 
+**A banner confirms every change.** Whenever `weights.json` is rewritten, for any reason, a short banner
+appears along the bottom of the page and fades out after about three seconds. It says what happened:
+*Saved to weights.json: Coding weights, Daily cap* (a save from this page), *recommendations changed: Big:
+GLM 5.3 → DeepSeek V4.1 Flash* (the stored picks moved; otherwise *refreshed (top picks unchanged)*),
+*edited outside this page* (a hand edit or another tab: the page reloads the new weights, unless you are in the
+middle of dragging a slider, in which case your edit wins), or *removed* (the file was deleted). The page
+notices by polling the file's version (`GET /api/weights/version`, a cheap `stat`) once a second, so edits made
+by the CLI, an editor, or an agent are caught too. A rebuild that changes nothing leaves the file alone and
+shows no banner.
+
 - Edit `aliases` and `caps`, never `recommendations`: it is overwritten on the next rebuild.
 - It is yours: commit it to keep it in git, or copy it to carry your tuning to another machine.
 - If you saved weights before the app moved into `local/`, the old `weights.json` at the repository root is

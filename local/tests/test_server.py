@@ -110,6 +110,17 @@ class WeightsApiTests(unittest.TestCase):
         self.call("POST", "/api/weights", self.GOOD)
         self.assertEqual(self.call("GET", "/api/weights")[1]["recommendations"], recs)
 
+    def test_version_endpoint_tracks_every_change_and_is_guarded(self):
+        self.assertEqual(self.call("GET", "/api/weights/version")[1], {"version": None})   # no file yet
+        status, saved = self.call("POST", "/api/weights", self.GOOD)
+        v1 = self.call("GET", "/api/weights/version")[1]["version"]
+        self.assertEqual(v1, saved["version"])                                              # the save reports it too
+        self.assertEqual(self.call("GET", "/api/weights")[1]["version"], v1)
+        weights_mod.write_recommendations({"generated_at": "x", "aliases": {"Coding": {"picks": []}}})
+        v2 = self.call("GET", "/api/weights/version")[1]["version"]
+        self.assertNotEqual(v1, v2)                                                         # a rebuild's write is visible
+        self.assertEqual(self.call("GET", "/api/weights/version", headers={"Host": "evil.example"})[0], 403)
+
     def test_empty_save_clears_the_overrides(self):
         self.call("POST", "/api/weights", self.GOOD)
         status, out = self.call("POST", "/api/weights", {"aliases": {}})
