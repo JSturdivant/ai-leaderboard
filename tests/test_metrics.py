@@ -7,9 +7,15 @@ from leaderboard.sources import arena
 class MetricCatalogueTests(unittest.TestCase):
     def test_every_metric_is_documented_for_the_ui(self):
         for key, m in METRICS.items():
-            for field in ("label", "short", "source", "unit", "url", "desc"):
+            for field in ("label", "short", "source", "unit", "url", "desc", "explain", "caveat"):
                 self.assertTrue(m.get(field), f"{key} is missing {field}")
             self.assertIn(m["source"], SOURCE_LABELS, key)
+
+    def test_every_dimension_is_explained(self):
+        import json
+        from leaderboard import CONFIG_PATH
+        for key, cat in json.loads(CONFIG_PATH.read_text())["categories"].items():
+            self.assertTrue(cat.get("explain"), key)
 
     def test_arena_boards_are_all_catalogued(self):
         for key in arena.BOARDS:

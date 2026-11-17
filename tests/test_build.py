@@ -166,5 +166,35 @@ class BuildTests(unittest.TestCase):
         self.assertIn("unknown-model", [u["name"] for u in self.d["diagnostics"]["unmatched"]])
 
 
+class AliasMetricWeightTests(unittest.TestCase):
+    """aliases.<name>.metric_weights re-weights benchmarks for that alias only."""
+
+    @staticmethod
+    def run_build(mutate):
+        c = cfg()
+        mutate(c)
+        with mock.patch.object(B, "load_raw", side_effect=lambda n: RAW.get(n)), mock.patch.object(B, "load_status", return_value={}):
+            d = B.build(c, now=NOW)
+        return {m["id"]: m for m in d["models"]}
+
+    def test_zeroing_a_benchmark_changes_only_that_alias(self):
+        def zero_gpqa(c):
+            c["aliases"]["Cheap"].update(min_share=0.4, metric_weights={"reasoning": {"gpqa_diamond": 0}})
+        base, tuned = self.run_build(lambda c: None), self.run_build(zero_gpqa)
+        a0, a1 = base["acme/gamma-2"], tuned["acme/gamma-2"]  # scores differ between coding and reasoning
+        # with reasoning dropped, Cheap's fit is just the coding score
+        self.assertEqual(a1["fit"]["Cheap"], a1["scores"]["coding"]["s"])
+        self.assertEqual((a0["fit"]["Cheap"], a1["fit"]["Cheap"]), (10.0, 20.0))
+        # other aliases and the shared category scores are untouched
+        self.assertEqual(a0["fit"]["Free"], a1["fit"]["Free"])
+        self.assertEqual(a0["scores"], a1["scores"])
+
+    def test_default_fit_unchanged_without_overrides(self):
+        a = self.run_build(lambda c: None)["acme/alpha-1"]
+        w = {"coding": 0.5, "reasoning": 0.5}
+        expect = round(sum(a["scores"][c]["s"] * wt for c, wt in w.items()) / sum(w.values()), 1)
+        self.assertAlmostEqual(a["fit"]["Cheap"], expect, places=1)
+
+
 if __name__ == "__main__":
     unittest.main()
