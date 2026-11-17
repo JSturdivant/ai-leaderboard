@@ -163,7 +163,19 @@ def main():
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO, format="%(asctime)s %(message)s", datefmt="%H:%M:%S")
     DATA_DIR.mkdir(exist_ok=True)
 
-    Handler.allowed_hosts = {f"{h}:{args.port}" for h in ("localhost", "127.0.0.1", "[::1]", args.host)}
+    local_ip = None
+    try:
+        import socket
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))
+        local_ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        pass
+    hosts = ["localhost", "127.0.0.1", "[::1]", args.host]
+    if local_ip:
+        hosts.append(local_ip)
+    Handler.allowed_hosts = {f"{h}:{args.port}" for h in hosts}
     if not args.no_schedule:
         Handler.scheduler = Scheduler()
         Handler.scheduler.start()
