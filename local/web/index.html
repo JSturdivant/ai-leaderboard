@@ -105,7 +105,7 @@
         <section class="block">
             <div class="block-head">
                 <h2 class="section-title">Alias picker <span class="save-state" id="saveState" aria-live="polite"></span></h2>
-                <p class="block-note">The three best-fitting models for each of your aliases under its cost cap (drag the slider or type a value), ranked by <b>fit</b>. Costs use the cost basis selected in the matrix controls. Fit blends the four use-case scores with weights per alias: click any fit number, or <i>How is fit calculated?</i>, to see every benchmark and how each model scored. Each card's <i>Fit weights</i> sliders set how much every dimension and benchmark counts for that alias. They are saved automatically to <code>weights.json</code>. The <a href="#glossary">Glossary</a> explains them all.</p>
+                <p class="block-note">The three best-fitting models for each of your aliases under its cost cap (drag the slider or type a value), ranked by <b>fit</b>. Costs use the cost basis selected in the matrix controls. Fit blends the four use-case scores with weights per alias: click any fit number, or <i>How is fit calculated?</i>, to see every benchmark and how each model scored. Each card's <i>Fit weights</i> sliders set how much every dimension and benchmark counts for that alias. They are saved automatically to <code>weights.json</code>, together with your cost caps and the latest recommendation for every alias, which is refreshed whenever the weights, caps, prices or benchmarks change. The <a href="#glossary">Glossary</a> explains them all.</p>
             </div>
             <div class="alias-grid" id="aliasGrid"></div>
             <datalist id="modelList"></datalist>

@@ -11,6 +11,7 @@ from pathlib import Path
 from unittest import mock
 
 import server
+from leaderboard import weights as weights_mod
 
 
 class WeightsApiTests(unittest.TestCase):
@@ -86,6 +87,28 @@ class WeightsApiTests(unittest.TestCase):
         self.assertEqual(self.call("POST", "/api/weights", self.GOOD, headers={"Origin": "http://evil.example"})[0], 403)
         self.assertEqual(self.call("GET", "/api/weights", headers={"Host": "evil.example"})[0], 403)
         self.assertFalse(self.path.exists())
+
+    def test_caps_are_saved_returned_and_kept_when_omitted(self):
+        status, out = self.call("POST", "/api/weights", {"aliases": {}, "caps": {"Coding": 0.5, "Free": None}})
+        self.assertEqual((status, out["caps"]), (200, {"Coding": 0.5, "Free": None}))
+        self.call("POST", "/api/weights", self.GOOD)  # no caps key: unchanged
+        status, out = self.call("GET", "/api/weights")
+        self.assertEqual(out["caps"], {"Coding": 0.5, "Free": None})
+        self.assertEqual(json.loads(self.path.read_text())["caps"], {"Coding": 0.5, "Free": None})
+
+    def test_bad_caps_are_rejected_and_change_nothing(self):
+        self.call("POST", "/api/weights", {"aliases": {}, "caps": {"Coding": 0.5}})
+        before = self.path.read_text()
+        for caps in ({"Nope": 1}, {"Coding": -1}, {"Coding": "lots"}, [1]):
+            self.assertEqual(self.call("POST", "/api/weights", {"aliases": {}, "caps": caps})[0], 400, caps)
+        self.assertEqual(self.path.read_text(), before)
+
+    def test_get_includes_the_stored_recommendations_and_a_save_does_not_drop_them(self):
+        recs = {"generated_at": "2026-11-17T18:00:00+00:00", "aliases": {"Coding": {"picks": [{"rank": 1, "model": "a/b"}]}}}
+        weights_mod.write_recommendations(recs)
+        self.assertEqual(self.call("GET", "/api/weights")[1]["recommendations"], recs)
+        self.call("POST", "/api/weights", self.GOOD)
+        self.assertEqual(self.call("GET", "/api/weights")[1]["recommendations"], recs)
 
     def test_empty_save_clears_the_overrides(self):
         self.call("POST", "/api/weights", self.GOOD)

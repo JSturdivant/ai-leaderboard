@@ -13,7 +13,8 @@ from .names import NameIndex, slug, strip_date
 from .sources import SOURCES
 from .store import load_raw, load_status, load_user_weights
 from .util import log, write_json_atomic
-from .weights import merge_alias
+from . import recommend, weights as weights_file
+from .weights import UNSET, merge_alias
 
 _write_lock = threading.Lock()
 CHANNELS = ("primary", "openrouter", "nous")  # tie-break order for "lowest"
@@ -271,9 +272,10 @@ def build(cfg, now=None):
 
     # ── 6. alias fit + picks ──────────────────────────────────────────────────────────
     aliases = cfg["aliases"]  # config.json defaults, echoed to the UI as the "reset" baseline
-    user_weights = load_user_weights(cfg)  # weights.json overlay saved from the UI
+    user = load_user_weights(cfg) or {}  # weights.json: the weights and caps saved from the UI
+    user_weights, user_caps = user.get("aliases", {}), user.get("caps", {})
     alias_out = {}
-    for name, a in ((n, merge_alias(a0, user_weights.get(n))) for n, a0 in aliases.items()):
+    for name, a in ((n, merge_alias(a0, user_weights.get(n), user_caps.get(n, UNSET))) for n, a0 in aliases.items()):
         for r in rows.values():
             fit, share = sc.fit_score(_alias_cat_scores(r, a, cats, scales, sc_cfg), a["weights"], a.get("min_share", 0.6))
             r.setdefault("fit", {})[name] = fit
@@ -285,6 +287,9 @@ def build(cfg, now=None):
         picks["unscored"] = sum(1 for r in rows.values() if r["fit"][name] is None and sc.eligible(r, a, r["cost"]["lowest"]["blended"]))
         picks["current"] = sc.validate_current((cfg.get("current_models") or {}).get(name), ok, allc, picks)
         picks["ranked"] = picks["ranked"][:15]
+        # the limits and tuning these picks were made under (the recommendations in weights.json record them)
+        picks.update(cap=a.get("max_cost"), require=list(a.get("require") or []), min_context=a.get("min_context"),
+                     custom_weights=name in user_weights)
         alias_out[name] = picks
 
     # ── 7. metadata, provenance, diagnostics ──────────────────────────────────────────
@@ -336,6 +341,7 @@ def build(cfg, now=None):
                            for k, c in cats.items()},
             "aliases": aliases,
             "user_weights": user_weights,
+            "user_caps": user_caps,
             "current_models": cfg.get("current_models") or {},
             "age": cfg["age"],
             "score_floor_for_ratio": sc_cfg["score_floor_for_ratio"],
@@ -351,6 +357,12 @@ def build(cfg, now=None):
 
 def build_and_write(cfg):
     data = build(cfg)
+    # Store the recommendations in weights.json *before* writing latest.json, so latest.json ends up the newer
+    # file: the scheduler rebuilds when weights.json is newer, and must not mistake this write for a hand edit.
+    try:
+        weights_file.write_recommendations(recommend.build(data))
+    except OSError as exc:  # e.g. a read-only folder: the dashboard still works, only the stored copy goes stale
+        log.warning("could not store recommendations in %s: %s", weights_file.weights_path(), exc)
     with _write_lock:  # the scheduler and a weights save can both rebuild; never interleave the two
         write_json_atomic(LATEST, data)
     log.info("wrote %s (%d models)", LATEST, len(data["models"]))

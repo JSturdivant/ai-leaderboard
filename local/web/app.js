@@ -39,17 +39,18 @@
         minScore: 50, fEfficient: false, fFree: false, fTools: false, fConfident: false,
         sort: { key: "usd", dir: 1 }, capOverride: {}, current: {}, theme: "dark", weights: {}, wOpen: {},
     };
-    let legacyWeights = null;  // fit weights an earlier version kept in this browser; moved into weights.json once
-    const P = loadPrefs();     // (must come after legacyWeights: loadPrefs assigns it)
+    let legacyWeights = null, legacyCaps = null;  // settings an earlier version kept in this browser; moved into weights.json once
+    const P = loadPrefs();  // (must come after the legacy variables: loadPrefs assigns them)
     function loadPrefs() {
         let saved = {};
         try { saved = JSON.parse(localStorage.getItem(PREF_KEY) || "{}"); } catch (e) { /* ignore */ }
         if (saved.weights && Object.keys(saved.weights).length) legacyWeights = saved.weights;
-        delete saved.weights;  // weights now live in weights.json (see saveNow), never in the browser
-        return { ...DEFAULTS, ...saved, weights: {} };
+        if (saved.capOverride && Object.keys(saved.capOverride).length) legacyCaps = saved.capOverride;
+        delete saved.weights; delete saved.capOverride;  // both live in weights.json now (see saveNow), never in the browser
+        return { ...DEFAULTS, ...saved, weights: {}, capOverride: {} };
     }
     function savePrefs() {
-        try { const { weights, ...rest } = P; localStorage.setItem(PREF_KEY, JSON.stringify(rest)); } catch (e) { /* private mode */ }
+        try { const { weights, capOverride, ...rest } = P; localStorage.setItem(PREF_KEY, JSON.stringify(rest)); } catch (e) { /* private mode */ }
     }
 
     // ── formatting ───────────────────────────────────────────────────────────────────
@@ -694,7 +695,7 @@
     // Every change is sent to the local server ~0.4 s after the last one, which writes weights.json (outside
     // data/, so clearing the data cache never loses it) and rebuilds data/latest.json with the same weights.
     let weightsReady = false, saveTimer = null, retryTimer = null, saving = false, dirty = false, retryDelay = 5000;
-    let lastOwnSave = 0, lastSliderInput = 0, pointerDown = false;
+    let lastOwnSave = 0, lastSliderInput = 0, pointerDown = false, lastSavedText = "";
     function setSaveState(kind, text) {
         const el = $("saveState");
         if (el) { el.className = "save-state " + kind; el.textContent = text; }
@@ -718,16 +719,26 @@
     }
     // The saved file is the source of truth: adopt it when the page first loads. It is read from the server directly,
     // not from data/latest.json, which is only rebuilt a moment after each save and may be a little behind.
+    // Caps live in the file as {alias: number | null}; in the page "no cap" is the string "none".
+    const capsFromFile = (caps) => Object.fromEntries(Object.entries(caps || {}).map(([a, v]) => [a, v === null ? "none" : v]));
+    const capsToFile = () => Object.fromEntries(Object.entries(P.capOverride).map(([a, v]) => [a, v === "none" ? null : v]));
+    function cleanCaps(c) {  // keep only caps the current config knows about (used for migrated old data)
+        const out = {};
+        for (const [a, v] of Object.entries(c || {})) {
+            if (DATA.config.aliases[a] && (v === "none" || (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1000))) out[a] = v;
+        }
+        return out;
+    }
     async function initWeights() {
         weightsReady = true;
-        let saved = DATA.config.user_weights || {};
-        try { saved = (await getJSON("/api/weights")).aliases || {}; } catch (e) { /* fall back to the build's copy */ }
-        if (Object.keys(saved).length) {
-            P.weights = JSON.parse(JSON.stringify(saved));
-            setSaveState("saved", "Your weights are loaded from weights.json");
-        } else if (legacyWeights) {  // one-time move of weights an earlier version kept in this browser
-            P.weights = cleanWeights(legacyWeights); legacyWeights = null;
-            if (Object.keys(P.weights).length) { scheduleSave(0); toast("Moved the weights saved in this browser into weights.json"); }
+        let saved = DATA.config.user_weights || {}, caps = DATA.config.user_caps || {};
+        try { const w = await getJSON("/api/weights"); saved = w.aliases || {}; caps = w.caps || {}; } catch (e) { /* fall back to the build's copy */ }
+        if (Object.keys(saved).length || Object.keys(caps).length) {
+            P.weights = JSON.parse(JSON.stringify(saved)); P.capOverride = capsFromFile(caps);
+            setSaveState("saved", "Your weights and caps are loaded from weights.json");
+        } else if (legacyWeights || legacyCaps) {  // one-time move of settings an earlier version kept in this browser
+            P.weights = cleanWeights(legacyWeights); P.capOverride = cleanCaps(legacyCaps); legacyWeights = legacyCaps = null;
+            if (Object.keys(P.weights).length || Object.keys(P.capOverride).length) { scheduleSave(0); toast("Moved the settings saved in this browser into weights.json"); }
             savePrefs();  // rewrites the browser copy without them
         }
     }
@@ -744,17 +755,31 @@
         try {
             const r = await fetch("/api/weights", {
                 method: "POST", keepalive, headers: { "Content-Type": "application/json", "X-Requested-With": "leaderboard" },
-                body: JSON.stringify({ aliases: P.weights }),
+                body: JSON.stringify({ aliases: P.weights, caps: capsToFile() }),
             });
             const out = await r.json().catch(() => ({}));  // always read the body, or the browser keeps the request open
             if (!r.ok) throw new Error(out.error || r.statusText);
             lastOwnSave = Date.now(); retryDelay = 5000;
-            if (!dirty) setSaveState("saved", "Saved to weights.json at " + new Date().toLocaleTimeString());
+            lastSavedText = "Saved to weights.json at " + new Date().toLocaleTimeString();
+            if (!dirty) { setSaveState("saved", lastSavedText); setTimeout(() => showRecommendationTime(), 1300); }  // the rebuild follows ~1 s after a save
         } catch (e) {
             dirty = true;
             setSaveState("error", `Not saved (${e.message}). Retrying…`);
             retryTimer = setTimeout(() => saveNow(), retryDelay); retryDelay = Math.min(retryDelay * 2, 60000);
         } finally { saving = false; }
+    }
+    // A moment after a save the build rewrites the stored recommendations; say whether they changed.
+    async function showRecommendationTime(attempt = 0) {
+        try {
+            const [w, st] = await Promise.all([getJSON("/api/weights"), getJSON("/api/status")]);
+            if (dirty || saving) return;  // a newer save is on its way and will ask again
+            // data/latest.json is written last, so once it is newer than our save the rebuild has finished
+            if (st.generated_ts * 1000 + 1500 < lastOwnSave) { if (attempt < 8) setTimeout(() => showRecommendationTime(attempt + 1), 1000); return; }
+            const t = w.recommendations && Date.parse(w.recommendations.generated_at);
+            if (!t) return;
+            const changed = t + 1500 >= lastOwnSave;  // written after our save (the file is only rewritten when something changed)
+            setSaveState("saved", `${lastSavedText} · recommendations ${changed ? "updated " + new Date(t).toLocaleTimeString() : "unchanged"}`);
+        } catch (e) { /* the status line simply keeps its last text */ }
     }
     let viewsTimer = null;
     const redrawViewsSoon = () => {
@@ -1142,7 +1167,7 @@
             if (t.dataset.dim) { P.dim = t.dataset.dim; savePrefs(); rerenderViews(); }
             else if (t.dataset.lab) { const g = t.dataset.lab, i = P.labsOff.indexOf(g); if (i >= 0) P.labsOff.splice(i, 1); else P.labsOff.push(g); savePrefs(); renderControls(); renderCharts(); renderTable(); }
             else if (t.dataset.view) { P.dim = "alias:" + t.dataset.view; P.grid = false; savePrefs(); rerenderViews(); $("chartBox").scrollIntoView({ behavior: "smooth", block: "start" }); }
-            else if (t.dataset.capreset) { delete P.capOverride[t.dataset.capreset]; savePrefs(); refreshAlias(t.dataset.capreset); renderCharts(); }
+            else if (t.dataset.capreset) { delete P.capOverride[t.dataset.capreset]; scheduleSave(); refreshAlias(t.dataset.capreset); renderCharts(); }
             else if (t.dataset.wreset) resetWeights(t.dataset.wreset);
             else if (t.dataset.gloss) goGlossary(t.dataset.gloss);
             else if (t.dataset.fitmode) { fitState.mode = t.dataset.fitmode; renderFit(); }
@@ -1162,7 +1187,7 @@
             lastSliderInput = Date.now();
             const name = t.dataset.capslider, cap = posToCap(Number(t.value));
             P.capOverride[name] = cap === null ? "none" : cap;
-            savePrefs(); refreshAlias(name, { skipSlider: true }); redrawChartsSoon();
+            scheduleSave(); refreshAlias(name, { skipSlider: true }); redrawChartsSoon();
         });
         // remember which "Fit weights" panels are open (toggle does not bubble, so listen while capturing)
         $("aliasGrid").addEventListener("toggle", (e) => {
@@ -1175,7 +1200,7 @@
                 const name = t.dataset.cap, v = t.value.trim(), n = Number(v);
                 if (v === "") P.capOverride[name] = "none";
                 else if (Number.isFinite(n) && n >= 0) P.capOverride[name] = n;
-                savePrefs(); refreshAlias(name); t.value = effectiveCap(name) ?? ""; renderCharts();
+                scheduleSave(); refreshAlias(name); t.value = effectiveCap(name) ?? ""; renderCharts();
             } else if (t.dataset.current !== undefined) {
                 const v = t.value.trim(), name = t.dataset.current;
                 const hit = byId[v] ? v : (DATA.models.find((m) => m.name.toLowerCase() === v.toLowerCase()) || {}).id;

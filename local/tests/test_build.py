@@ -170,11 +170,11 @@ class AliasMetricWeightTests(unittest.TestCase):
     """aliases.<name>.metric_weights re-weights benchmarks for that alias only."""
 
     @staticmethod
-    def run_build(mutate, user=None, whole=False):
+    def run_build(mutate, user=None, whole=False, caps=None):
         c = cfg()
         mutate(c)
         with mock.patch.object(B, "load_raw", side_effect=lambda n: RAW.get(n)), mock.patch.object(B, "load_status", return_value={}), \
-                mock.patch.object(B, "load_user_weights", return_value=user or {}):
+                mock.patch.object(B, "load_user_weights", return_value={"aliases": user or {}, "caps": caps or {}}):
             d = B.build(c, now=NOW)
         return d if whole else {m["id"]: m for m in d["models"]}
 
@@ -208,6 +208,30 @@ class AliasMetricWeightTests(unittest.TestCase):
         self.assertEqual(by["acme/gamma-2"]["fit"]["Cheap"], by["acme/gamma-2"]["scores"]["coding"]["s"])  # reasoning switched off
         self.assertEqual(d["config"]["user_weights"], {"Cheap": {"cats": {"coding": 1.0, "reasoning": 0.0}}})
         self.assertEqual(d["config"]["aliases"]["Cheap"]["weights"], {"coding": 0.5, "reasoning": 0.5})  # config.json defaults, for "reset"
+
+    def test_saved_caps_limit_the_candidates_and_are_echoed(self):
+        base = self.run_build(lambda c: None, whole=True)
+        capped = self.run_build(lambda c: None, caps={"Cheap": 0.2, "Free": None}, whole=True)
+        self.assertEqual(base["alias_picks"]["Cheap"]["cap"], 1.0)             # config.json value
+        self.assertEqual(capped["alias_picks"]["Cheap"]["cap"], 0.2)           # saved cap wins
+        self.assertEqual(capped["config"]["user_caps"], {"Cheap": 0.2, "Free": None})
+        self.assertEqual(capped["config"]["aliases"]["Cheap"]["max_cost"], 1.0)  # defaults still echoed for "reset"
+        by = {m["id"]: m for m in capped["models"]}
+        for mid in capped["alias_picks"]["Cheap"]["ranked"]:
+            self.assertLessEqual(by[mid]["cost"]["lowest"]["blended"], 0.2)
+        self.assertLessEqual(capped["alias_picks"]["Cheap"]["n"], base["alias_picks"]["Cheap"]["n"])
+
+    def test_null_cap_means_no_cap(self):
+        d = self.run_build(lambda c: None, caps={"Cheap": None}, whole=True)
+        self.assertIsNone(d["alias_picks"]["Cheap"]["cap"])
+        self.assertGreaterEqual(d["alias_picks"]["Cheap"]["n"], self.run_build(lambda c: None, whole=True)["alias_picks"]["Cheap"]["n"])
+
+    def test_picks_record_the_limits_and_tuning_they_were_made_under(self):
+        d = self.run_build(lambda c: c["aliases"]["Cheap"].update(require=["tools"], min_context=100000),
+                           user={"Cheap": {"cats": {"coding": 1.0}}}, whole=True)
+        p = d["alias_picks"]["Cheap"]
+        self.assertEqual((p["require"], p["min_context"], p["custom_weights"]), (["tools"], 100000, True))
+        self.assertFalse(d["alias_picks"]["Free"]["custom_weights"])
 
     def test_default_fit_unchanged_without_overrides(self):
         a = self.run_build(lambda c: None)["acme/alpha-1"]

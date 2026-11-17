@@ -101,8 +101,7 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/api/status":
             return self._json(self._status())
         if path == "/api/weights":
-            return self._json({"aliases": weights_mod.load(load_config()), "saved_at": weights_mod.saved_at(),
-                               "file": weights_mod.weights_path().name})
+            return self._json(weights_mod.snapshot(load_config()))
         return super().do_GET()
 
     def do_POST(self):
@@ -128,7 +127,7 @@ class Handler(SimpleHTTPRequestHandler):
             body = json.loads(self.rfile.read(length).decode("utf-8"))
             if not isinstance(body, dict) or "aliases" not in body:
                 raise ValueError('expected {"aliases": {...}}')
-            saved = weights_mod.save(load_config(), body["aliases"])
+            saved = weights_mod.save(load_config(), body["aliases"], body.get("caps"))  # caps optional: omitted keeps them
         except (ValueError, UnicodeDecodeError) as exc:  # includes json.JSONDecodeError
             return self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
         rebuild_soon()
