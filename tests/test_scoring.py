@@ -86,20 +86,36 @@ class AliasTests(unittest.TestCase):
         self.assertFalse(sc.eligible(row, {"min_context": 500000}, 0.1))
         self.assertFalse(sc.eligible(row, {}, None))
 
-    def test_picks_top_fit_and_best_value(self):
-        c = [{"id": "big", "cost": 10, "fit": 95}, {"id": "near", "cost": 1, "fit": 90}, {"id": "cheap", "cost": 0.1, "fit": 60}]
-        p = sc.alias_picks(c, tolerance=0.1)
-        self.assertEqual((p["top"], p["best_value"]), ("big", "near"))  # near is within 10% of 95
+    def test_picks_rank_by_fit_and_report_the_frontier(self):
+        c = [{"id": "cheap", "cost": 0.1, "fit": 60}, {"id": "big", "cost": 10, "fit": 95}, {"id": "near", "cost": 1, "fit": 90}]
+        p = sc.alias_picks(c)
+        self.assertEqual((p["top"], p["ranked"], p["n"]), ("big", ["big", "near", "cheap"], 3))
         self.assertEqual(p["frontier"], ["cheap", "near", "big"])
-        self.assertEqual(sc.alias_picks(c, tolerance=0.01)["best_value"], "big")
+        self.assertNotIn("best_value", p)  # removed: the UI shows the top 3 by fit instead
+
+    def test_shortlist_is_three_different_models(self):
+        c = [{"id": "m:free", "base": "m", "cost": 0, "fit": 80}, {"id": "m", "base": "m", "cost": 1, "fit": 80},
+             {"id": "a", "base": "a", "cost": 2, "fit": 79}, {"id": "b", "base": "b", "cost": 3, "fit": 78}, {"id": "c", "base": "c", "cost": 4, "fit": 77}]
+        p = sc.alias_picks(c)
+        self.assertEqual(p["shortlist"], ["m:free", "a", "b"])  # the paid twin is skipped, only three entries
+        self.assertEqual(p["ranked"][:2], ["m:free", "m"])      # the full ranking still lists every row
+
+    def test_shortlist_without_base_uses_the_id(self):
+        c = [{"id": "x", "cost": 1, "fit": 50}, {"id": "y", "cost": 1, "fit": 40}]
+        self.assertEqual(sc.alias_picks(c)["shortlist"], ["x", "y"])
+
+    def test_equal_fit_goes_to_the_cheaper_model(self):
+        c = [{"id": "dear", "cost": 5, "fit": 80}, {"id": "cheap", "cost": 1, "fit": 80}]
+        self.assertEqual(sc.alias_picks(c)["ranked"], ["cheap", "dear"])
 
     def test_empty(self):
-        self.assertIsNone(sc.alias_picks([], 0.1)["top"])
+        p = sc.alias_picks([])
+        self.assertEqual((p["top"], p["ranked"], p["n"]), (None, [], 0))
 
     def test_validate_current(self):
         allc = [{"id": "a", "cost": 1, "fit": 50}, {"id": "b", "cost": 1, "fit": 70}, {"id": "c", "cost": 5, "fit": 90}]
         ok = allc[:2]
-        picks = sc.alias_picks(ok, 0.1)
+        picks = sc.alias_picks(ok)
         v = sc.validate_current("a", ok, allc, picks)
         self.assertEqual((v["status"], v["rank"], v["of"], v["better"]), ("ok", 2, 2, ["b"]))
         self.assertEqual(sc.validate_current("c", ok, allc, picks)["status"], "ineligible")

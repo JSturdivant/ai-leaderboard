@@ -152,7 +152,6 @@
     }
   },
 
-  "alias_value_tolerance": 0.1,
   "current_models": {
     "Free": null, "Cheap": null, "Daily": null, "Big": null,
     "Jumbo": null, "Thinking": null, "Coding": null, "Task": null

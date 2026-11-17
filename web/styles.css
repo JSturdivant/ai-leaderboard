@@ -168,8 +168,14 @@ input[type="search"] { width: 190px; }
 .pick-name:hover { color: var(--accent); }
 .pick-meta { font-size: 0.8rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .pick-sub { font-size: 0.76rem; color: var(--text-muted); }
-.runners { font-size: 0.76rem; color: var(--text-secondary); line-height: 1.5; }
-.runners span { cursor: pointer; } .runners span:hover { color: var(--accent); }
+.top-row { display: flex; gap: 10px; align-items: flex-start; padding: 4px 0; }
+.top-rank { flex: 0 0 18px; height: 18px; margin-top: 2px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 0.7rem; font-weight: 800; display: inline-flex; align-items: center; justify-content: center; }
+.pick-label + .top-row .top-rank { background: var(--accent); color: #fff; }
+.top-main { flex: 1; min-width: 0; }
+.top-main .pick-name { margin-right: 6px; }
+.pick-label + .top-row .pick-name { font-size: 1.02rem; }
+.save-state { margin-left: 10px; font-size: 0.74rem; font-weight: 600; color: var(--text-muted); vertical-align: 2px; }
+.save-state.saving { color: var(--accent); } .save-state.saved { color: var(--good); } .save-state.error { color: var(--bad); }
 .validate { border-top: 1px solid var(--border-subtle); padding-top: 9px; display: flex; flex-direction: column; gap: 6px; }
 .validate input { width: 100%; font-size: 0.8rem; padding: 6px 10px; }
 .verdict { font-size: 0.78rem; line-height: 1.45; }
@@ -318,7 +324,6 @@ a.w-name { cursor: pointer; }
 .w-row.dim input[type="range"] { accent-color: var(--warn); }
 .w-val { font-size: 0.72rem; text-align: right; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
 .w-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.w-snippet { font-family: var(--mono); font-size: 0.7rem; background: var(--bg-input); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 8px 10px; overflow: auto; max-height: 220px; white-space: pre; user-select: all; }
 .custom-note { background: rgba(251, 191, 36, 0.12); border: 1px solid rgba(251, 191, 36, 0.35); border-radius: var(--radius-sm); padding: 8px 12px; font-size: 0.84rem; margin: 6px 0 10px; display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .fit-table a, .plain a[data-gloss] { cursor: pointer; }
 

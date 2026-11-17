@@ -21,16 +21,16 @@ the data fresh in the background; leave it running and the page updates live.
   frontier; vertical lines mark your alias cost caps; ◇ marks the models you entered in the alias cards.
   Optional 2×2 grid. **My aliases only** hides everything except the models set for your aliases, each
   labelled with its alias name.
-- **Alias picker** — for each alias, the *top fit* and the *best value* (cheapest model within 10% of the
-  top fit) under that alias's cost cap, plus runners-up. Set the cap with the slider (free → $0.01 → $50 →
-  no cap, log scale) or type an exact value; the two stay in sync. Type the model you use today into an
-  alias card and it tells you its rank and whether anything is both cheaper-or-equal and better.
+- **Alias picker** — for each alias, the three highest-fit *different* models under that alias's cost cap
+  (equal fits go to the cheaper one; a model sold both paid and `:free` is listed once). Set the cap with the slider (free → $0.01 → $50 → no cap, log scale) or type an
+  exact value; the two stay in sync. Type the model you use today into an alias card and it tells you its
+  rank and whether anything is both cheaper-or-equal and better.
 - **Fit explained** — click any *fit* number (or **How is fit calculated?**) for the formula, every
   benchmark with its weight and 0→100 scale, and a table of how each model scored on each benchmark.
 - **Fit weights** — every alias card has a collapsible panel with a slider for each dimension and each
   benchmark. The % beside a slider is that item's share of the alias's fit (0 turns it off); the picks,
-  matrix and dialog update as you drag. Edits are kept in your browser, marked *custom*, and can be reset
-  or exported with **Copy config snippet** to make them permanent (see `metric_weights` below).
+  matrix and dialog update as you drag. Every change is **saved automatically to `weights.json`** (see
+  below), the card is marked *custom*, and **Reset to defaults** returns to the `config.json` weights.
 - **Glossary** (bottom of the page) — what each dimension and benchmark means, how to read its scale, its
   source, which dimensions use it, the main caveat, and the key terms (fit, $/100 pts, frontier, thin, …).
 - **$ / Intelligence leaderboard** — sortable, filterable table across all four dimensions.
@@ -71,7 +71,7 @@ No server? Use the CLI from cron/launchd/Task Scheduler:
 python3 refresh.py                 # fetch whatever is past its interval, rebuild data/latest.json
 python3 refresh.py --force         # fetch everything now
 python3 refresh.py --build-only    # no network: rebuild from cached data after editing config.json
-python3 refresh.py --report        # print each alias's picks in the terminal
+python3 refresh.py --report        # print each alias's top 3 fits in the terminal
 python3 refresh.py --loop          # keep refreshing on the intervals, no web UI
 ```
 
@@ -79,18 +79,39 @@ Example crontab (daily at 06:10): `10 6 * * * cd /path/to/ai-leaderboard && pyth
 
 `data/latest.json` is the companion data file: every model with its channel prices, benchmark values,
 category scores, $/intelligence, alias fits and the per-alias picks. Your agent or scripts can read it
-directly. Source caches live in `data/raw/`, refresh status in `data/status.json`.
+directly. Source caches live in `data/raw/`, refresh status in `data/status.json`. Everything under
+`data/` is disposable: delete it and the next run rebuilds it.
+
+## Your saved weights (`weights.json`)
+
+The fit-weight sliders are saved to **`weights.json`** in the project folder, deliberately *outside*
+`data/` so clearing the cache can't lose them. Saving is automatic: about half a second after you stop
+moving a slider the page sends the change to the local server, which writes the file and rebuilds
+`data/latest.json` with the same weights, so the page, `refresh.py --report` and anything reading
+`latest.json` all agree. The indicator beside **Alias picker** shows *Saving… / Saved / Not saved*; if a
+save fails it retries automatically, and a change made just before closing the tab is still flushed.
+
+- The file is plain JSON and holds only what differs from `config.json`, e.g.
+  `{"aliases": {"Coding": {"cats": {"coding": 0.6}, "metrics": {"coding": {"swe_bench_verified": 5}}}}}`
+  (`cats` = dimension weights, `metrics` = benchmark weights per dimension, `0` = off). Edit it by hand if
+  you like (invalid entries are ignored, never fatal); changes reach the picks on the next rebuild and the
+  sliders on the next page load. Delete it to reset every alias.
+- It is yours: commit it to keep it in git, copy it to carry your tuning to another machine.
+- Weights an earlier version kept in the browser are moved into this file the first time you open the page.
+- Cost caps and the model boxes on the alias cards are still browser-only settings.
+- Use another location with the `LEADERBOARD_WEIGHTS` environment variable.
 
 ## Tuning (`config.json`)
 
 - `aliases` — cost cap (`max_cost`, `null` = no cap), requirements (`free`, `tools`, `reasoning`),
   `min_context`, and how much each use case counts toward that alias's fit.
   Caps can also be edited live on each card (kept in your browser).
-  To weight benchmarks differently for one alias, add `metric_weights` (only the benchmarks you want to
-  change; `0` switches one off), e.g.
+  To set different *default* benchmark weights for one alias, add `metric_weights` (only the benchmarks you
+  want to change; `0` switches one off), e.g.
   `"Coding": { "weights": {"coding": 0.6, "agentic": 0.3, "reasoning": 0.1},
   "metric_weights": {"coding": {"swe_bench_verified": 5, "arena_webdev": 0}} }`,
-  then `python3 refresh.py --build-only`. The browser sliders produce exactly this via *Copy config snippet*.
+  then `python3 refresh.py --build-only`. Slider changes are layered on top of these defaults and saved
+  separately in `weights.json`, so config defaults and your own tuning never overwrite each other.
 - `current_models` — the model you run for each alias today, e.g. `"Daily": "z-ai/glm-5.3-flash"`.
   The boxes on the alias cards override this (kept in your browser). Both feed the **My aliases only**
   matrix view.
@@ -103,7 +124,7 @@ directly. Source caches live in `data/raw/`, refresh status in `data/status.json
 ### Assumptions I made for you
 
 - **Daily** had no cap in your description; I used **$0.50/M**. Thinking, Coding and Task have no cap
-  (their picks are "best fit" and "best value" instead). Edit in `config.json`.
+  (they rank purely by fit). Edit in `config.json`.
 - Your caps (<$0.10, <$1, <$2) are applied to **blended 3:1** $/M tokens.
 - Coding and Task additionally require tool use and ≥128k context; Thinking requires reasoning support.
 

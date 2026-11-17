@@ -21,12 +21,36 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse
 
 from leaderboard import DATA_DIR, LATEST, ROOT
+from leaderboard import weights as weights_mod
+from leaderboard.build import build_and_write
 from leaderboard.scheduler import Scheduler
 from leaderboard.store import load_config, load_status
 from leaderboard.util import read_json
 
 WEB = ROOT / "web"
+MAX_BODY = 64 * 1024
 mimetypes.add_type("application/javascript", ".js")
+
+_rebuild_timer = None
+_rebuild_lock = threading.Lock()
+
+
+def rebuild_soon(delay=1.0):
+    """Rebuild data/latest.json shortly after the last weights save (a burst of slider moves = one build)."""
+    global _rebuild_timer
+
+    def run():
+        try:
+            build_and_write(load_config())
+        except Exception:  # noqa: BLE001 - a failed rebuild must never take the server down
+            logging.getLogger("server").exception("rebuild after weights save failed")
+
+    with _rebuild_lock:
+        if _rebuild_timer:
+            _rebuild_timer.cancel()
+        _rebuild_timer = threading.Timer(delay, run)
+        _rebuild_timer.daemon = True
+        _rebuild_timer.start()
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -76,6 +100,9 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if path == "/api/status":
             return self._json(self._status())
+        if path == "/api/weights":
+            return self._json({"aliases": weights_mod.load(load_config()), "saved_at": weights_mod.saved_at(),
+                               "file": weights_mod.weights_path().name})
         return super().do_GET()
 
     def do_POST(self):
@@ -86,7 +113,26 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json({"error": "scheduler disabled (--no-schedule)"}, HTTPStatus.CONFLICT)
             self.scheduler.trigger(force=True)
             return self._json({"queued": True}, HTTPStatus.ACCEPTED)
+        if urlparse(self.path).path == "/api/weights":
+            return self._save_weights()
         return self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
+
+    def _save_weights(self):
+        try:
+            length = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            length = -1
+        if not 0 < length <= MAX_BODY:
+            return self._json({"error": "body must be 1 byte to 64 KB"}, HTTPStatus.REQUEST_ENTITY_TOO_LARGE if length > MAX_BODY else HTTPStatus.BAD_REQUEST)
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+            if not isinstance(body, dict) or "aliases" not in body:
+                raise ValueError('expected {"aliases": {...}}')
+            saved = weights_mod.save(load_config(), body["aliases"])
+        except (ValueError, UnicodeDecodeError) as exc:  # includes json.JSONDecodeError
+            return self._json({"error": str(exc)}, HTTPStatus.BAD_REQUEST)
+        rebuild_soon()
+        return self._json(saved)
 
     def _status(self):
         gen = None

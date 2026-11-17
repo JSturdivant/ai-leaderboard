@@ -7,15 +7,19 @@ from . import CONFIG_PATH, LATEST
 from .build import build_and_write
 from .sources import SOURCES
 from .store import forceable_sources, load_config, refresh_sources, stale_sources
+from .weights import weights_path
 from .util import log
 
 
 def needs_rebuild(refreshed):
-    """Rebuild after any fetch, when no output exists yet, or when config.json was edited."""
+    """Rebuild after any fetch, when no output exists yet, or when config.json / weights.json was edited."""
     if refreshed or not LATEST.exists():
         return True
     try:
-        return CONFIG_PATH.stat().st_mtime > LATEST.stat().st_mtime
+        newest_input = CONFIG_PATH.stat().st_mtime
+        if weights_path().exists():
+            newest_input = max(newest_input, weights_path().stat().st_mtime)
+        return newest_input > LATEST.stat().st_mtime
     except OSError:
         return True
 

@@ -38,8 +38,10 @@ def report():
         cap = data["config"]["aliases"][alias].get("max_cost")
         cap_s = "free" if cap == 0 else ("no cap" if cap is None else f"< ${cap:g}/M")
         print(f"{alias:9s} [{cap_s}, {p['n']} candidates, {p.get('unscored', 0)} unscored]")
-        print(f"    top fit    {fmt(alias, p['top'])}")
-        print(f"    best value {fmt(alias, p['best_value'])}")
+        for rank, mid in enumerate(p["shortlist"], 1):
+            print(f"    top fit #{rank} {fmt(alias, mid)}")
+        if not p["shortlist"]:
+            print("    top fit    —")
         cur = p.get("current")
         if cur:
             print(f"    your pick  {cur['id']}: {cur['status']}" + (f", rank {cur.get('rank')}/{cur.get('of')}" if cur.get("rank") else ""))

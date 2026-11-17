@@ -39,11 +39,18 @@
         minScore: 50, fEfficient: false, fFree: false, fTools: false, fConfident: false,
         sort: { key: "usd", dir: 1 }, capOverride: {}, current: {}, theme: "dark", weights: {}, wOpen: {},
     };
-    const P = loadPrefs();
+    let legacyWeights = null;  // fit weights an earlier version kept in this browser; moved into weights.json once
+    const P = loadPrefs();     // (must come after legacyWeights: loadPrefs assigns it)
     function loadPrefs() {
-        try { return { ...DEFAULTS, ...JSON.parse(localStorage.getItem(PREF_KEY) || "{}") }; } catch (e) { return { ...DEFAULTS }; }
+        let saved = {};
+        try { saved = JSON.parse(localStorage.getItem(PREF_KEY) || "{}"); } catch (e) { /* ignore */ }
+        if (saved.weights && Object.keys(saved.weights).length) legacyWeights = saved.weights;
+        delete saved.weights;  // weights now live in weights.json (see saveNow), never in the browser
+        return { ...DEFAULTS, ...saved, weights: {} };
     }
-    function savePrefs() { try { localStorage.setItem(PREF_KEY, JSON.stringify(P)); } catch (e) { /* private mode */ } }
+    function savePrefs() {
+        try { const { weights, ...rest } = P; localStorage.setItem(PREF_KEY, JSON.stringify(rest)); } catch (e) { /* private mode */ }
+    }
 
     // ── formatting ───────────────────────────────────────────────────────────────────
     function usd(x) {
@@ -204,10 +211,11 @@
     }
     const fitCaches = {};
     const invalidateFit = (name) => { if (name) delete fitCaches[name]; else Object.keys(fitCaches).forEach((k) => delete fitCaches[k]); };
-    // The backend's numbers are exact for the config weights; recompute only when weights differ from them.
+    // The build's numbers are exact when this alias has no overrides at all (none in config.json's metric_weights,
+    // none saved in weights.json when the data was built, none being edited now); otherwise recompute here.
     function usesBackendFit(name) {
-        const a = DATA.config.aliases[name];
-        return !P.weights[name] && !(a.metric_weights && Object.keys(a.metric_weights).length);
+        const a = DATA.config.aliases[name], built = (DATA.config.user_weights || {})[name];
+        return !P.weights[name] && !built && !(a.metric_weights && Object.keys(a.metric_weights).length);
     }
     // Category scores as this alias sees them (same rules as scoring.composite).
     function computeCats(m, w) {
@@ -259,7 +267,6 @@
     }
     function aliasState(name) {
         const a = { ...DATA.config.aliases[name], max_cost: effectiveCap(name) };
-        const tol = DATA.config.alias_value_tolerance;
         const all = [], ok = [];
         let unscored = 0;
         for (const m of DATA.models) {
@@ -271,11 +278,7 @@
             if (eligible(m, a)) ok.push(c);
         }
         const ranked = [...ok].sort((x, y) => y.fit - x.fit || x.cost - y.cost);
-        const out = { a, n: ok.length, unscored, ranked, top: ranked[0] || null, value: null, current: null };
-        if (ranked.length) {
-            const near = ok.filter((c) => c.fit >= ranked[0].fit * (1 - tol));
-            out.value = [...near].sort((x, y) => x.cost - y.cost || y.fit - x.fit)[0];
-        }
+        const out = { a, n: ok.length, unscored, ranked, top: ranked[0] || null, current: null };
         const curId = P.current[name] !== undefined ? P.current[name] : DATA.config.current_models[name];
         if (curId) {
             const cur = all.find((c) => c.id === curId);
@@ -323,7 +326,10 @@
         let st;
         try { st = await getJSON("/api/status"); } catch (e) { $("statusText").textContent = "Server unreachable"; $("statusDot").className = "dot err"; return schedulePoll(10000); }
         if (lastMtime !== null && st.generated_ts && st.generated_ts !== lastMtime) {
-            await loadData(true);
+            // never swap the page out from under a slider the user is dragging; try again shortly
+            if (pointerDown || Date.now() - lastSliderInput < 2000) return schedulePoll(1000);
+            // a rebuild we caused ourselves (saving weights) is not news worth a toast
+            await loadData(Date.now() - lastOwnSave > 60000);
         } else if (!DATA && st.generated_ts) {
             await loadData(false);
         }
@@ -339,6 +345,7 @@
         try {
             DATA = await getJSON("/data/latest.json");
         } catch (e) { if (e.status !== 404) console.error(e); return; }
+        if (!weightsReady) await initWeights();
         prepare();
         $("emptyState").hidden = true; $("mainContent").hidden = false;
         renderAll();
@@ -554,14 +561,24 @@
     }
 
     // ── alias cards ──────────────────────────────────────────────────────────────────
-    function pickLine(label, c, name, extra) {
-        if (!c) return `<div class="pick"><div class="pick-label">${label}</div><div class="pick-sub">No eligible model with enough benchmark data.</div></div>`;
-        const m = byId[c.id];
-        return `<div class="pick"><div class="pick-label">${label}</div><div class="pick-main">
-            <span class="pick-name" data-model="${esc(m.id)}" title="${esc(m.id)}">${esc(m.name.replace(/^[^:]+: /, ""))}</span>
-            <span class="pick-meta">${usdM(c.cost)} · <a class="fitlink" data-fit="${esc(name)}" data-fitmodel="${esc(m.id)}" title="How was this fit calculated?">fit ${num1(c.fit)}</a></span></div>
-            ${missing(m, name)}
-            ${extra ? `<div class="pick-sub">${extra}</div>` : ""}</div>`;
+    // The three best fits under this alias's limits (equal fits go to the cheaper model).
+    function topList(st, name) {
+        const note = `${st.n} ranked${st.unscored ? ` · ${st.unscored} more fit the constraints but have no benchmark data` : ""}`;
+        if (!st.ranked.length) return `<div class="pick"><div class="pick-label">Top fit</div><div class="pick-sub">No eligible model with enough benchmark data.</div></div>`;
+        // three different models: a model sold two ways (paid and ':free') shows once, as its cheaper row
+        const seen = new Set(), picks = [];
+        for (const c of st.ranked) {
+            const base = byId[c.id].base;
+            if (!seen.has(base)) { seen.add(base); picks.push(c); if (picks.length === 3) break; }
+        }
+        const rows = picks.map((c, i) => {
+            const m = byId[c.id];
+            return `<div class="top-row"><span class="top-rank">${i + 1}</span><div class="top-main">
+                <span class="pick-name" data-model="${esc(m.id)}" title="${esc(m.id)}">${esc(shortName(m))}</span>
+                <span class="pick-meta">${usdM(c.cost)} · <a class="fitlink" data-fit="${esc(name)}" data-fitmodel="${esc(m.id)}" title="How was this fit calculated?">fit ${num1(c.fit)}</a></span>
+                ${missing(m, name)}</div></div>`;
+        }).join("");
+        return `<div class="pick"><div class="pick-label">Top fit</div>${rows}<div class="pick-sub">${note}</div></div>`;
     }
     function missing(m, name) {
         const w = aliasWeights(name).cats, have = fitInfo(m, name).cats;
@@ -620,10 +637,9 @@
             ${r.metrics.map((m) => `<div class="w-row"><a class="w-name" data-gloss="${esc(m.k)}" title="${esc(DATA.metrics[m.k].label)} (click for the glossary entry)">${esc(metricShort(m.k))}</a>
                 <input type="range" min="0" max="${MET_MAX}" step="${MET_STEP}" value="${m.x}" data-wmet="${esc(name)}|${esc(r.c)}|${esc(m.k)}" aria-label="${esc(name)}: ${esc(DATA.metrics[m.k].label)} weight">
                 <span class="w-val" data-wval="m|${esc(r.c)}|${esc(m.k)}">${shareText(m.share)}</span></div>`).join("")}</div>`).join("");
-        return `<p class="w-hint">Set how much each dimension and benchmark counts toward <b>${esc(name)}</b>'s fit. The % is each item's share of the fit; 0 turns it off. A benchmark a model wasn't tested on is never scored as 0.</p>
+        return `<p class="w-hint">Set how much each dimension and benchmark counts toward <b>${esc(name)}</b>'s fit. The % is each item's share of the fit; 0 turns it off. A benchmark a model wasn't tested on is never scored as 0. <b>Changes save automatically to weights.json.</b></p>
             ${groups}
-            <div class="w-actions"><button class="btn btn-sm" data-wreset="${esc(name)}">Reset to defaults</button><button class="btn btn-sm" data-wcopy="${esc(name)}" title="Copy as JSON to merge into aliases in config.json">Copy config snippet</button></div>
-            <pre class="w-snippet" data-wsnippet="${esc(name)}" hidden></pre>`;
+            <div class="w-actions"><button class="btn btn-sm" data-wreset="${esc(name)}" title="Back to the config.json weights">Reset to defaults</button></div>`;
     }
     function weightsDetails(name) {
         return `<details class="weights" data-wdetails="${esc(name)}" ${P.wOpen[name] ? "open" : ""}><summary>Fit weights <span class="badge" data-wbadge ${P.weights[name] ? "" : "hidden"}>custom</span></summary>
@@ -656,9 +672,10 @@
             if (!Object.keys(o.metrics).length) delete o.metrics;
         }
         if (!o.cats && !o.metrics) delete P.weights[name];
-        invalidateFit(name); savePrefs();
+        invalidateFit(name); scheduleSave();
     }
     function onWeightInput(t) {
+        lastSliderInput = Date.now();
         let name, c, k = null;
         const kind = t.dataset.wdim ? "d" : "m";
         if (kind === "d") [name, c] = t.dataset.wdim.split("|"); else [name, c, k] = t.dataset.wmet.split("|");
@@ -666,24 +683,78 @@
         updateWeightLabels(name); refreshAlias(name, { skipSlider: true }); redrawViewsSoon();
     }
     function resetWeights(name) {
-        delete P.weights[name]; invalidateFit(name); savePrefs();
+        delete P.weights[name]; invalidateFit(name); scheduleSave();
         const panel = aliasCardEl(name) && aliasCardEl(name).querySelector("[data-wpanel]");
         if (panel) panel.innerHTML = weightsPanelInner(name);
         updateWeightLabels(name); refreshAlias(name);
         renderCharts(); renderTable(); renderDetail();
         if (!$("fitModal").hidden && fitState.alias === name) renderFit();
     }
-    // JSON to merge into aliases.<name> in config.json (differences from the shared category weights only).
-    function weightSnippet(name) {
-        const w = aliasWeights(name), cats = DATA.config.categories, weights = {}, mw = {};
-        for (const c of Object.keys(w.cats)) if (w.cats[c] > 0) weights[c] = Number(w.cats[c].toFixed(2));
-        for (const c of Object.keys(w.metrics)) for (const [k, x] of Object.entries(w.metrics[c])) if (x !== cats[c].metrics[k]) (mw[c] = mw[c] || {})[k] = x;
-        return JSON.stringify({ [name]: { weights, ...(Object.keys(mw).length ? { metric_weights: mw } : {}) } }, null, 2);
+    // ── saving weights to weights.json ───────────────────────────────────────────────
+    // Every change is sent to the local server ~0.4 s after the last one, which writes weights.json (outside
+    // data/, so clearing the data cache never loses it) and rebuilds data/latest.json with the same weights.
+    let weightsReady = false, saveTimer = null, retryTimer = null, saving = false, dirty = false, retryDelay = 5000;
+    let lastOwnSave = 0, lastSliderInput = 0, pointerDown = false;
+    function setSaveState(kind, text) {
+        const el = $("saveState");
+        if (el) { el.className = "save-state " + kind; el.textContent = text; }
     }
-    async function copySnippet(name) {
-        const text = weightSnippet(name), pre = aliasCardEl(name).querySelector("[data-wsnippet]");
-        try { await navigator.clipboard.writeText(text); toast("Copied. Merge it into aliases in config.json, then run python3 refresh.py --build-only"); }
-        catch (e) { pre.textContent = text; pre.hidden = false; toast("Clipboard unavailable here, so the snippet is shown in the panel"); }
+    function cleanWeights(w) {  // keep only entries the current config knows about (used for migrated old data)
+        const ok = (x) => typeof x === "number" && Number.isFinite(x) && x >= 0 && x <= 100, out = {};
+        for (const [alias, e] of Object.entries(w || {})) {
+            if (!DATA.config.aliases[alias] || !e) continue;
+            const kept = {}, metrics = {};
+            const cats = Object.fromEntries(Object.entries(e.cats || {}).filter(([c, x]) => DATA.config.categories[c] && ok(x)));
+            for (const [c, ms] of Object.entries(e.metrics || {})) {
+                if (!DATA.config.categories[c]) continue;
+                const good = Object.fromEntries(Object.entries(ms || {}).filter(([k, x]) => DATA.metrics[k] && ok(x)));
+                if (Object.keys(good).length) metrics[c] = good;
+            }
+            if (Object.keys(cats).length) kept.cats = cats;
+            if (Object.keys(metrics).length) kept.metrics = metrics;
+            if (Object.keys(kept).length) out[alias] = kept;
+        }
+        return out;
+    }
+    // The saved file is the source of truth: adopt it when the page first loads. It is read from the server directly,
+    // not from data/latest.json, which is only rebuilt a moment after each save and may be a little behind.
+    async function initWeights() {
+        weightsReady = true;
+        let saved = DATA.config.user_weights || {};
+        try { saved = (await getJSON("/api/weights")).aliases || {}; } catch (e) { /* fall back to the build's copy */ }
+        if (Object.keys(saved).length) {
+            P.weights = JSON.parse(JSON.stringify(saved));
+            setSaveState("saved", "Your weights are loaded from weights.json");
+        } else if (legacyWeights) {  // one-time move of weights an earlier version kept in this browser
+            P.weights = cleanWeights(legacyWeights); legacyWeights = null;
+            if (Object.keys(P.weights).length) { scheduleSave(0); toast("Moved the weights saved in this browser into weights.json"); }
+            savePrefs();  // rewrites the browser copy without them
+        }
+    }
+    function scheduleSave(delay = 400) {
+        dirty = true; clearTimeout(saveTimer); clearTimeout(retryTimer);
+        setSaveState("saving", "Saving…");
+        saveTimer = setTimeout(() => saveNow(), delay);
+    }
+    async function saveNow(keepalive = false) {
+        clearTimeout(saveTimer);
+        if (!dirty) return;
+        if (saving) { saveTimer = setTimeout(() => saveNow(keepalive), 150); return; }  // one request at a time
+        saving = true; dirty = false;
+        try {
+            const r = await fetch("/api/weights", {
+                method: "POST", keepalive, headers: { "Content-Type": "application/json", "X-Requested-With": "leaderboard" },
+                body: JSON.stringify({ aliases: P.weights }),
+            });
+            const out = await r.json().catch(() => ({}));  // always read the body, or the browser keeps the request open
+            if (!r.ok) throw new Error(out.error || r.statusText);
+            lastOwnSave = Date.now(); retryDelay = 5000;
+            if (!dirty) setSaveState("saved", "Saved to weights.json at " + new Date().toLocaleTimeString());
+        } catch (e) {
+            dirty = true;
+            setSaveState("error", `Not saved (${e.message}). Retrying…`);
+            retryTimer = setTimeout(() => saveNow(), retryDelay); retryDelay = Math.min(retryDelay * 2, 60000);
+        } finally { saving = false; }
     }
     let viewsTimer = null;
     const redrawViewsSoon = () => {
@@ -693,13 +764,8 @@
 
     function aliasBody(name) {
         const st = aliasState(name);
-        const runners = st.ranked.filter((c) => c.id !== (st.top && st.top.id) && c.id !== (st.value && st.value.id)).slice(0, 3);
-        const sameTop = st.top && st.value && st.top.id === st.value.id;
         const curVal = P.current[name] !== undefined ? P.current[name] : (DATA.config.current_models[name] || "");
-        const pct = Math.round(DATA.config.alias_value_tolerance * 100);
-        return `${pickLine("Top fit", st.top, name, `${st.n} ranked${st.unscored ? ` · ${st.unscored} more fit the constraints but have no benchmark data` : ""}`)}
-            ${sameTop ? `<div class="pick-sub">Also the best value: nothing cheaper is within ${pct}% of it.</div>` : pickLine("Best value", st.value, name, st.top && st.value ? `${(100 - 100 * st.value.cost / st.top.cost).toFixed(0)}% cheaper than top fit, ${(st.top.fit - st.value.fit).toFixed(1)} fit lower` : "")}
-            ${runners.length ? `<div class="runners">Next: ${runners.map((c) => `<span data-model="${esc(c.id)}">${esc(byId[c.id].name.replace(/^[^:]+: /, ""))} (${usd(c.cost)}, ${num1(c.fit)})</span>`).join(" · ")}</div>` : ""}
+        return `${topList(st, name)}
             <div class="validate"><div class="pick-label">Validate your current model</div>
                 <input type="text" list="modelList" data-current="${esc(name)}" value="${esc(curVal)}" placeholder="e.g. z-ai/glm-5.3" autocomplete="off">
                 ${verdict(st, name)}</div>
@@ -722,7 +788,6 @@
         </div>`;
     }
     function renderAliases() {
-        $("tolPct").textContent = Math.round(DATA.config.alias_value_tolerance * 100);
         $("aliasGrid").innerHTML = Object.keys(DATA.config.aliases).map(aliasCard).join("");
     }
     // Re-render one card's picks without replacing its slider (which would cancel a drag in progress).
@@ -983,7 +1048,6 @@
     function glossaryTerms() {
         const sc = DATA.config.scoring || { low_quantile: 0.05, high_quantile: 0.99, min_coverage: 0.35, confident_coverage: 0.6 };
         const lo = Math.round(sc.low_quantile * 100), hi = Math.round(sc.high_quantile * 100);
-        const tol = Math.round(DATA.config.alias_value_tolerance * 100);
         return [
             ["Fit", "A 0–100 score for how well a model suits one alias: the weighted average of the dimension scores, using that alias's weights. Click any fit number to see the arithmetic."],
             ["Dimension (use case)", `One of the four things being judged. Each dimension score is a weighted average of its benchmarks, shown only when the model has at least ${Math.round(sc.min_coverage * 100)}% of that dimension's benchmark weight.`],
@@ -994,7 +1058,7 @@
             ["Blended cost", "Input and output prices combined into one $/M tokens figure at a chosen ratio (default 3 input : 1 output). Input-only and output-only views are available in the matrix controls."],
             ["$ / 100 pts", "Blended $/M tokens ÷ score × 100: what 100 points of capability would cost at that model's efficiency. Lower is better; free models show Free."],
             ["Efficiency frontier", "Models for which nothing else is both cheaper (or equal) and better. Drawn as the dashed line on the matrix."],
-            ["Top fit / Best value", `Top fit is the highest fit among models that meet the alias's limits. Best value is the cheapest model whose fit is within ${tol}% of the top.`],
+            ["Top fit", "The three different models with the highest fit among those that meet the alias's limits (cost cap, tool use, context). Equal fits go to the cheaper model, and a model sold two ways (for example paid and :free) is listed once."],
             ["Elo", "A rating built from head-to-head votes: beating a stronger opponent moves it more. Only differences matter; a 100-point gap means the higher-rated model wins about 64% of votes."],
             ["Reasoning effort", "Many models run at several effort levels (low, high, max). Benchmarks list each separately and the leaderboard keeps the best, so real cost can be higher than the per-token price implies because high effort uses more tokens."],
             ["Family match", "A benchmark result matched by model family rather than the exact dated snapshot. Flagged “family” in the model detail."],
@@ -1073,14 +1137,13 @@
 
     function bind() {
         document.addEventListener("click", (e) => {
-            const t = e.target.closest("[data-dim],[data-lab],[data-model],[data-view],[data-sort],[data-capreset],[data-fit],[data-fitmode],[data-fitrows],[data-mine],[data-wreset],[data-wcopy],[data-gloss]");
+            const t = e.target.closest("[data-dim],[data-lab],[data-model],[data-view],[data-sort],[data-capreset],[data-fit],[data-fitmode],[data-fitrows],[data-mine],[data-wreset],[data-gloss]");
             if (!t) return;
             if (t.dataset.dim) { P.dim = t.dataset.dim; savePrefs(); rerenderViews(); }
             else if (t.dataset.lab) { const g = t.dataset.lab, i = P.labsOff.indexOf(g); if (i >= 0) P.labsOff.splice(i, 1); else P.labsOff.push(g); savePrefs(); renderControls(); renderCharts(); renderTable(); }
             else if (t.dataset.view) { P.dim = "alias:" + t.dataset.view; P.grid = false; savePrefs(); rerenderViews(); $("chartBox").scrollIntoView({ behavior: "smooth", block: "start" }); }
             else if (t.dataset.capreset) { delete P.capOverride[t.dataset.capreset]; savePrefs(); refreshAlias(t.dataset.capreset); renderCharts(); }
             else if (t.dataset.wreset) resetWeights(t.dataset.wreset);
-            else if (t.dataset.wcopy) copySnippet(t.dataset.wcopy);
             else if (t.dataset.gloss) goGlossary(t.dataset.gloss);
             else if (t.dataset.fitmode) { fitState.mode = t.dataset.fitmode; renderFit(); }
             else if (t.dataset.fitrows) { fitState.rows = Number(t.dataset.fitrows); renderFit(); }
@@ -1096,6 +1159,7 @@
             const t = e.target;
             if (t.dataset.wdim || t.dataset.wmet) return onWeightInput(t);
             if (!t.dataset.capslider) return;
+            lastSliderInput = Date.now();
             const name = t.dataset.capslider, cap = posToCap(Number(t.value));
             P.capOverride[name] = cap === null ? "none" : cap;
             savePrefs(); refreshAlias(name, { skipSlider: true }); redrawChartsSoon();
@@ -1151,6 +1215,13 @@
         Chart.register(aliasLabelPlugin);
         Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
         if (/[?&]debug\b/.test(location.search)) window.__lb = { computeFit, aliasWeights, getData: () => DATA };  // console/test handle
+        // pending weight edits are flushed when the tab is hidden or closed (keepalive lets the request outlive the page)
+        const flush = () => { if (dirty) saveNow(true); };
+        window.addEventListener("pagehide", flush);
+        document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flush(); });
+        // remember a slider drag in progress so a background data refresh never swaps the page under it
+        document.addEventListener("pointerdown", (e) => { if (e.target.matches && e.target.matches('input[type="range"]')) pointerDown = true; });
+        for (const ev of ["pointerup", "pointercancel"]) window.addEventListener(ev, () => { pointerDown = false; });
         applyTheme(); bind(); poll();
     }
     document.addEventListener("DOMContentLoaded", init);
