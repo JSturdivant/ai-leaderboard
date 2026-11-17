@@ -205,6 +205,12 @@ def write_recommendations(recs):
     return True
 
 
+def load_recommendations():
+    """The last-written recommendations dict (or None), read under the lock."""
+    with _lock:
+        return _raw().get("recommendations")
+
+
 def saved_at():
     with _lock:
         return _raw().get("saved_at")
