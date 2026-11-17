@@ -15,13 +15,18 @@ the data fresh in the background; leave it running and the page updates live.
 
 ## What you get
 
+- **Cost vs. capability matrix** (top of the page) — one tab per use case (Coding/Engineering, Agentic
+  task execution, Reasoning & problem solving, Everyday agent chat), or the fit for a single alias. Older
+  models fade out and shrink; hollow dots have thin benchmark coverage; the dashed line is the efficiency
+  frontier; vertical lines mark your alias cost caps; ◇ marks the models you entered in the alias cards.
+  Optional 2×2 grid. **My aliases only** hides everything except the models set for your aliases, each
+  labelled with its alias name.
 - **Alias picker** — for each alias, the *top fit* and the *best value* (cheapest model within 10% of the
-  top fit) under that alias's cost cap, plus runners-up. Type the model you use today into an alias card
-  and it tells you its rank and whether anything is both cheaper-or-equal and better.
-- **Cost vs. capability matrix** — one tab per use case (Coding/Engineering, Agentic task execution,
-  Reasoning & problem solving, Everyday agent chat), or the fit for a single alias. Older models fade out
-  and shrink; hollow dots have thin benchmark coverage; the dashed line is the efficiency frontier; vertical
-  lines mark your alias cost caps; ◇ marks the models you entered in the alias cards. Optional 2×2 grid.
+  top fit) under that alias's cost cap, plus runners-up. Set the cap with the slider (free → $0.01 → $50 →
+  no cap, log scale) or type an exact value; the two stay in sync. Type the model you use today into an
+  alias card and it tells you its rank and whether anything is both cheaper-or-equal and better.
+- **Fit explained** — click any *fit* number (or **How is fit calculated?**) for the formula, every
+  benchmark with its weight and 0→100 scale, and a table of how each model scored on each benchmark.
 - **$ / Intelligence leaderboard** — sortable, filterable table across all four dimensions.
   `$/100 pts = blended $/M tokens ÷ score × 100`: what 100 points of capability would cost at that model's
   efficiency (lower is better).
@@ -76,6 +81,8 @@ directly. Source caches live in `data/raw/`, refresh status in `data/status.json
   `min_context`, and how much each use case counts toward that alias's fit.
   Caps can also be edited live on each card (kept in your browser).
 - `current_models` — the model you run for each alias today, e.g. `"Daily": "z-ai/glm-5.3-flash"`.
+  The boxes on the alias cards override this (kept in your browser). Both feed the **My aliases only**
+  matrix view.
 - `categories` — which benchmarks feed each use case, and their weights.
 - `cost.blend` — input:output weighting for "blended" cost (default 3:1). The page can also switch to
   input-only or output-only, which is useful for cache-heavy agent loops.
@@ -95,7 +102,10 @@ directly. Source caches live in `data/raw/`, refresh status in `data/status.json
    models, so Elo, % and index scales can be averaged.
 2. A category score is the weighted mean of the metrics a model has, only if they carry ≥35% of that
    category's weight. Below 60% it is flagged *thin*.
-3. Alias fit = weighted mean of category scores per the alias's weights.
+3. Alias fit = weighted mean of the category scores, using the alias's weights (`aliases.<name>.weights`).
+   A missing score is never counted as 0: its weight is spread over the categories the model does have,
+   and the model needs ≥60% of the alias's weight (`min_share`, 40% for Free) to be ranked at all.
+   The fit dialog shows this exactly, including the points each benchmark adds to a model's fit.
 4. Benchmarks are joined to models by exact normalized name, then by model family (snapshot date
    stripped; flagged *family* in the detail view). There is no fuzzy matching.
 5. Reasoning-effort variants of one model collapse to the best score; Terminal-Bench uses the median

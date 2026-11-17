@@ -35,7 +35,7 @@
     let topLabs = [];
 
     const DEFAULTS = {
-        dim: "cat:coding", blend: "3:1", fade: 90, hide: 0, q: "", labsOff: [], frontier: true, caps: true, grid: false,
+        dim: "cat:coding", blend: "3:1", fade: 90, hide: 0, q: "", labsOff: [], frontier: true, caps: true, grid: false, mineOnly: false,
         minScore: 50, fEfficient: false, fFree: false, fTools: false, fConfident: false,
         sort: { key: "usd", dir: 1 }, capOverride: {}, current: {}, theme: "dark",
     };
@@ -258,6 +258,59 @@
     }
     function destroyCharts() { charts.forEach((c) => c.destroy()); charts = []; }
 
+    // The model currently chosen for each alias: the alias-card boxes (this browser) win over config.json.
+    const currentModelFor = (name) => (P.current[name] !== undefined ? P.current[name] : DATA.config.current_models[name]) || null;
+    function currentSelection() {
+        return Object.keys(DATA.config.aliases).map((alias) => { const id = currentModelFor(alias); return { alias, id, m: id ? byId[id] : null }; });
+    }
+    function renderMineNote() {
+        const el = $("mineNote");
+        if (!el) return;
+        if (!P.mineOnly) { el.hidden = true; return; }
+        const notSet = [], missing = [], noData = [];
+        for (const { alias, id, m } of currentSelection()) {
+            if (!id) notSet.push(alias);
+            else if (!m) missing.push(`${alias} → ${id}`);
+            else if (!dimInfo(m)) noData.push(`${alias} → ${m.name.replace(/^[^:]+: /, "")}`);
+        }
+        const parts = ["Showing only the models set for your aliases (from the boxes in the alias picker, or <code>current_models</code> in config.json)."];
+        if (notSet.length) parts.push(`<b>Not set:</b> ${notSet.map(esc).join(", ")}.`);
+        if (missing.length) parts.push(`<b>Not in the catalogue:</b> ${missing.map(esc).join("; ")}.`);
+        if (noData.length) parts.push(`<b>No ${esc(dimLabel())} score:</b> ${noData.map(esc).join("; ")}.`);
+        el.innerHTML = parts.join(" ");
+        el.hidden = false;
+    }
+    // Draws each alias's name beside its point (only for datasets flagged aliasLabels).
+    const aliasLabelPlugin = {
+        id: "aliasLabels",
+        afterDatasetsDraw(chart) {
+            const ctx = chart.ctx, area = chart.chartArea, placed = [], dots = [];
+            chart.data.datasets.forEach((ds, i) => { if (ds.aliasLabels) chart.getDatasetMeta(i).data.forEach((el) => dots.push(el)); });
+            // a label may not overlap another label or any dot; try right, left, above, below
+            const overlaps = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+            const blocked = (r) => placed.some((p) => overlaps(r, p)) || dots.some((d) => overlaps(r, { x: d.x - 12, y: d.y - 12, w: 24, h: 24 }));
+            chart.data.datasets.forEach((ds, i) => {
+                if (!ds.aliasLabels) return;
+                const meta = chart.getDatasetMeta(i);
+                if (meta.hidden) return;
+                ctx.save();
+                const size = ds.labelSize || 12;
+                ctx.font = `700 ${size}px ${Chart.defaults.font.family}`;
+                ctx.fillStyle = ds.labelColor; ctx.textBaseline = "top"; ctx.textAlign = "left";
+                meta.data.forEach((el, j) => {
+                    const text = ds.data[j].label, w = ctx.measureText(text).width, h = size * 1.25;
+                    const cands = [{ x: el.x + 14, y: el.y - h / 2 }, { x: el.x - 14 - w, y: el.y - h / 2 },
+                        { x: el.x - w / 2, y: el.y - 14 - h }, { x: el.x - w / 2, y: el.y + 14 }].map((c) => ({ ...c, w, h }));
+                    const inside = (r) => r.x >= area.left && r.x + r.w <= area.right && r.y >= area.top && r.y + r.h <= area.bottom;
+                    const pick = cands.find((r) => inside(r) && !blocked(r)) || cands.find(inside) || cands[0];
+                    placed.push(pick);
+                    ctx.fillText(text, pick.x, pick.y + 1);
+                });
+                ctx.restore();
+            });
+        },
+    };
+
     function buildChart(canvas, dim, mini) {
         const textColor = css("--text-secondary"), grid = css("--chart-grid");
         const vis = visibleModels();
@@ -268,7 +321,7 @@
         const groups = {};
         for (const r of rows) (groups[labGroup(r.m)] = groups[labGroup(r.m)] || []).push(r);
         const order = Object.keys(groups).sort((a, b) => (a === "other") - (b === "other") || groups[b].length - groups[a].length);
-        const datasets = order.map((g) => {
+        const datasets = P.mineOnly ? [] : order.map((g) => {
             const base = labColor(g), list = groups[g];
             const pts = list.map((r) => ({ x: r.m._cost > 0 ? r.m._cost : FREE_X, y: r.di.s, m: r.m, di: r.di, dim }));
             const hit = list.map((r) => matchesQuery(r.m));
@@ -283,24 +336,35 @@
             };
         });
 
-        const maxCost = rows.reduce((mx, r) => Math.max(mx, r.m._cost), 1);
-        const xMax = maxCost * 1.8;
-        if (P.frontier) {
+        // models the user runs today (from the alias cards or config.json); aliases sharing a model share a point
+        const mine = [], byModel = {};
+        for (const { alias, m } of currentSelection()) {
+            const di = m && dimInfo(m, dim);
+            if (!m || !di || m._cost == null) continue;
+            if (byModel[m.id]) { byModel[m.id].aliases.push(alias); continue; }
+            byModel[m.id] = { x: m._cost > 0 ? m._cost : FREE_X, y: di.s, m, di, dim, aliases: [alias] };
+            mine.push(byModel[m.id]);
+        }
+        mine.forEach((p) => { p.label = p.aliases.join(" / "); p.alias = p.label; });
+        const scaleOn = P.mineOnly ? mine : rows;
+        const maxCost = scaleOn.reduce((mx, r) => Math.max(mx, r.m._cost), P.mineOnly ? 0.5 : 1);
+        const xMax = maxCost * (P.mineOnly ? 3 : 1.8);
+        if (P.frontier && !P.mineOnly) {
             const line = rows.filter((r) => front.has(r.m.id)).sort((a, b) => a.m._cost - b.m._cost)
                 .map((r) => ({ x: r.m._cost > 0 ? r.m._cost : FREE_X, y: r.di.s }));
             if (line.length) line.push({ x: xMax, y: line[line.length - 1].y });
             datasets.push({ label: "Efficiency frontier", data: line, showLine: true, stepped: "after", borderDash: [6, 4], borderWidth: 1.5,
                 borderColor: css("--text-muted"), pointRadius: 0, pointHitRadius: 0, fill: false, order: 1 });
         }
-        // models the user runs today (from the alias cards)
-        const mine = [];
-        for (const name of Object.keys(DATA.config.aliases)) {
-            const id = P.current[name] !== undefined ? P.current[name] : DATA.config.current_models[name];
-            const m = id && byId[id], di = m && dimInfo(m, dim);
-            if (m && di && m._cost != null) mine.push({ x: m._cost > 0 ? m._cost : FREE_X, y: di.s, m, di, dim, alias: name });
+        if (mine.length && P.mineOnly) {
+            datasets.push({ label: "My aliases", data: mine, aliasLabels: true, labelColor: css("--text-primary"), labelSize: mini ? 11 : 13,
+                pointStyle: "circle", pointRadius: mini ? 7 : 10, pointHoverRadius: 12, pointHitRadius: 10, borderWidth: 2.5, order: 0,
+                backgroundColor: mine.map((p) => withAlpha(labColor(labGroup(p.m)), p.di.conf ? 0.9 : 0.3)),
+                borderColor: mine.map((p) => labColor(labGroup(p.m))) });
+        } else if (mine.length) {
+            datasets.push({ label: "Your aliases", data: mine, pointStyle: "rectRot", pointRadius: 10, borderWidth: 2.5,
+                backgroundColor: "rgba(0,0,0,0)", borderColor: css("--text-primary"), order: 0 });
         }
-        if (mine.length) datasets.push({ label: "Your aliases", data: mine, pointStyle: "rectRot", pointRadius: 10, borderWidth: 2.5,
-            backgroundColor: "rgba(0,0,0,0)", borderColor: css("--text-primary"), order: 0 });
 
         const annotations = {};
         if (P.caps) {
@@ -331,7 +395,7 @@
                 },
                 onHover: (evt, els) => { evt.native.target.style.cursor = els.length ? "pointer" : "default"; },
                 plugins: {
-                    legend: { display: !mini, position: "top", onClick: () => {}, labels: { color: textColor, usePointStyle: true, boxWidth: 8, font: { size: 11 }, padding: 14,
+                    legend: { display: !mini && !P.mineOnly, position: "top", onClick: () => {}, labels: { color: textColor, usePointStyle: true, boxWidth: 8, font: { size: 11 }, padding: 14,
                         generateLabels: (ch) => Chart.defaults.plugins.legend.labels.generateLabels(ch).map((l) => {
                             const g = order[l.datasetIndex];
                             if (g) { l.fillStyle = labColor(g); l.strokeStyle = labColor(g); }
@@ -381,6 +445,7 @@
         destroyCharts();
         const grid = P.grid;
         $("chartBox").hidden = grid; $("chartGrid").hidden = !grid;
+        renderMineNote();
         if (!grid) { buildChart($("scatterChart"), P.dim, false); return; }
         const box = $("chartGrid"); box.innerHTML = "";
         for (const cat of Object.keys(DATA.config.categories)) {
@@ -396,7 +461,7 @@
         const m = byId[c.id];
         return `<div class="pick"><div class="pick-label">${label}</div><div class="pick-main">
             <span class="pick-name" data-model="${esc(m.id)}" title="${esc(m.id)}">${esc(m.name.replace(/^[^:]+: /, ""))}</span>
-            <span class="pick-meta">${usdM(c.cost)} · fit ${num1(c.fit)}</span></div>
+            <span class="pick-meta">${usdM(c.cost)} · <a class="fitlink" data-fit="${esc(name)}" data-fitmodel="${esc(m.id)}" title="How was this fit calculated?">fit ${num1(c.fit)}</a></span></div>
             ${missing(m, name)}
             ${extra ? `<div class="pick-sub">${extra}</div>` : ""}</div>`;
     }
@@ -420,35 +485,74 @@
         if (betterTxt) return `<div class="verdict warn">${nm(cur.id)}: ${rank}. Better at same-or-lower cost: ${betterTxt}.</div>`;
         return `<div class="verdict ok">${nm(cur.id)}: ${rank}. Nothing is both cheaper-or-equal and better, so it is on the efficient frontier.</div>`;
     }
+    // Cap slider: position 0 = $0 (free only), 1..99 = log scale $0.01..$50, 100 = no cap.
+    const CAP_MIN = 0.01, CAP_MAX = 50, CAP_STEPS = 98;
+    function capToPos(cap) {
+        if (cap == null) return 100;
+        if (cap <= 0) return 0;
+        if (cap <= CAP_MIN) return 1;
+        if (cap >= CAP_MAX) return 99;
+        return Math.round(1 + CAP_STEPS * Math.log(cap / CAP_MIN) / Math.log(CAP_MAX / CAP_MIN));
+    }
+    function posToCap(pos) {
+        if (pos >= 100) return null;
+        if (pos <= 0) return 0;
+        return Number((CAP_MIN * Math.pow(CAP_MAX / CAP_MIN, (pos - 1) / CAP_STEPS)).toPrecision(2));
+    }
+
+    function aliasBody(name) {
+        const st = aliasState(name);
+        const runners = st.ranked.filter((c) => c.id !== (st.top && st.top.id) && c.id !== (st.value && st.value.id)).slice(0, 3);
+        const sameTop = st.top && st.value && st.top.id === st.value.id;
+        const curVal = P.current[name] !== undefined ? P.current[name] : (DATA.config.current_models[name] || "");
+        const pct = Math.round(DATA.config.alias_value_tolerance * 100);
+        return `${pickLine("Top fit", st.top, name, `${st.n} ranked${st.unscored ? ` · ${st.unscored} more fit the constraints but have no benchmark data` : ""}`)}
+            ${sameTop ? `<div class="pick-sub">Also the best value: nothing cheaper is within ${pct}% of it.</div>` : pickLine("Best value", st.value, name, st.top && st.value ? `${(100 - 100 * st.value.cost / st.top.cost).toFixed(0)}% cheaper than top fit, ${(st.top.fit - st.value.fit).toFixed(1)} fit lower` : "")}
+            ${runners.length ? `<div class="runners">Next: ${runners.map((c) => `<span data-model="${esc(c.id)}">${esc(byId[c.id].name.replace(/^[^:]+: /, ""))} (${usd(c.cost)}, ${num1(c.fit)})</span>`).join(" · ")}</div>` : ""}
+            <div class="validate"><div class="pick-label">Validate your current model</div>
+                <input type="text" list="modelList" data-current="${esc(name)}" value="${esc(curVal)}" placeholder="e.g. z-ai/glm-5.3" autocomplete="off">
+                ${verdict(st, name)}</div>
+            <div class="card-actions"><button class="btn btn-sm" data-view="${esc(name)}">Show on matrix</button>
+                <button class="btn btn-sm" data-fit="${esc(name)}">How is fit calculated?</button></div>`;
+    }
+    function aliasCard(name) {
+        const a = DATA.config.aliases[name], cap = effectiveCap(name), freeOnly = a.max_cost === 0;
+        const capUI = freeOnly ? `<span class="cap">free only</span>`
+            : `<span class="cap">≤ $<input type="number" min="0" step="0.05" data-cap="${esc(name)}" value="${cap == null ? "" : cap}" placeholder="none" title="Blended $/M cap. Clear for no cap."><button class="chip" data-capreset="${esc(name)}" title="Back to the config.json value" ${P.capOverride[name] === undefined ? "hidden" : ""}>↺</button></span>`;
+        const marks = [0.1, 1, 10].map((v) => `<span style="left:${capToPos(v)}%">$${v}</span>`).join("");
+        const slider = freeOnly ? "" : `<div class="cap-slider"><input type="range" min="0" max="100" step="1" value="${capToPos(cap)}" data-capslider="${esc(name)}" aria-label="${esc(name)} cost cap">
+            <div class="cap-marks"><span style="left:0">free</span>${marks}<span style="left:100%">no cap</span></div></div>`;
+        return `<div class="alias-card ${P.dim === "alias:" + name ? "viewing" : ""}" data-alias="${esc(name)}">
+            <div class="alias-top"><span class="alias-name">${esc(name)}</span>${capUI}</div>
+            ${slider}
+            <div class="alias-note">${esc(a.note || "")}</div>
+            <div class="alias-body" data-body="${esc(name)}">${aliasBody(name)}</div>
+        </div>`;
+    }
     function renderAliases() {
         $("tolPct").textContent = Math.round(DATA.config.alias_value_tolerance * 100);
-        const html = Object.keys(DATA.config.aliases).map((name) => {
-            const st = aliasState(name), a = DATA.config.aliases[name], cap = effectiveCap(name);
-            const overridden = P.capOverride[name] !== undefined;
-            const runners = st.ranked.filter((c) => c.id !== (st.top && st.top.id) && c.id !== (st.value && st.value.id)).slice(0, 3);
-            const sameTop = st.top && st.value && st.top.id === st.value.id;
-            const curVal = P.current[name] !== undefined ? P.current[name] : (DATA.config.current_models[name] || "");
-            return `<div class="alias-card ${P.dim === "alias:" + name ? "viewing" : ""}" data-alias="${esc(name)}">
-                <div class="alias-top"><span class="alias-name">${esc(name)}</span>
-                    <span class="cap">${a.max_cost === 0 && !overridden ? "free only" : `≤ $<input type="number" min="0" step="0.05" data-cap="${esc(name)}" value="${cap == null ? "" : cap}" placeholder="none" title="Blended $/M cap. Clear for no cap.">`}${overridden ? ` <button class="chip" data-capreset="${esc(name)}" title="Back to config.json value">↺</button>` : ""}</span></div>
-                <div class="alias-note">${esc(a.note || "")}</div>
-                ${pickLine("Top fit", st.top, name, `${st.n} ranked${st.unscored ? ` · ${st.unscored} more fit the constraints but have no benchmark data` : ""}`)}
-                ${sameTop ? `<div class="pick-sub">Also the best value: nothing cheaper is within ${Math.round(DATA.config.alias_value_tolerance * 100)}% of it.</div>` : pickLine("Best value", st.value, name, st.top && st.value ? `${(100 - 100 * st.value.cost / st.top.cost).toFixed(0)}% cheaper than top fit, ${(st.top.fit - st.value.fit).toFixed(1)} fit lower` : "")}
-                ${runners.length ? `<div class="runners">Next: ${runners.map((c) => `<span data-model="${esc(c.id)}">${esc(byId[c.id].name.replace(/^[^:]+: /, ""))} (${usd(c.cost)}, ${num1(c.fit)})</span>`).join(" · ")}</div>` : ""}
-                <div class="validate"><div class="pick-label">Validate your current model</div>
-                    <input type="text" list="modelList" data-current="${esc(name)}" value="${esc(curVal)}" placeholder="e.g. z-ai/glm-5.3" autocomplete="off">
-                    ${verdict(st, name)}</div>
-                <div class="card-actions"><button class="btn btn-sm" data-view="${esc(name)}">Show on matrix</button></div>
-            </div>`;
-        }).join("");
-        $("aliasGrid").innerHTML = html;
+        $("aliasGrid").innerHTML = Object.keys(DATA.config.aliases).map(aliasCard).join("");
     }
+    // Re-render one card's picks without replacing its slider (which would cancel a drag in progress).
+    function refreshAlias(name, { skipSlider = false } = {}) {
+        const card = $("aliasGrid").querySelector(`[data-alias="${CSS.escape(name)}"]`);
+        if (!card) return;
+        card.querySelector("[data-body]").innerHTML = aliasBody(name);
+        const cap = effectiveCap(name), input = card.querySelector("[data-cap]"), sl = card.querySelector("[data-capslider]"), rs = card.querySelector("[data-capreset]");
+        if (input && document.activeElement !== input) input.value = cap == null ? "" : cap;
+        if (sl && !skipSlider) sl.value = capToPos(cap);
+        if (rs) rs.hidden = P.capOverride[name] === undefined;
+    }
+    let chartTimer = null;
+    const redrawChartsSoon = () => { clearTimeout(chartTimer); chartTimer = setTimeout(renderCharts, 120); };
 
     // ── controls ─────────────────────────────────────────────────────────────────────
     function renderControls() {
         const tabs = Object.entries(DATA.config.categories).map(([k, c]) => [("cat:" + k), c.label]);
         const curAlias = P.dim.startsWith("alias:") ? [[P.dim, dimLabel(P.dim)]] : [];
         $("dimTabs").innerHTML = [...tabs, ...curAlias].map(([k, l]) => `<button class="tab ${P.dim === k ? "active" : ""}" data-dim="${esc(k)}">${esc(l)}</button>`).join("");
+        $("mineTabs").innerHTML = [["0", "All models"], ["1", "My aliases only"]]
+            .map(([v, l]) => `<button class="tab ${(P.mineOnly ? "1" : "0") === v ? "active" : ""}" data-mine="${v}">${l}</button>`).join("");
         const groups = [...topLabs, "other"];
         $("labChips").innerHTML = groups.map((g) => `<button class="chip ${P.labsOff.includes(g) ? "" : "active"}" data-lab="${esc(g)}"><i style="background:${labColor(g)}"></i>${esc(labName(g))}</button>`).join("");
         $("blendSelect").value = P.blend; $("fadeSelect").value = String(P.fade); $("hideSelect").value = String(P.hide);
@@ -523,12 +627,133 @@
                 ${costRows.map((r) => `<tr class="${Math.abs(r.v - best) < 1e-12 ? "best" : ""}"><td>${CHANNEL_NAME[r.ch]}</td><td>${esc(r.c.provider)}${r.c.note ? ` <span class="muted">· ${esc(r.c.note)}</span>` : ""}</td><td class="num">${usd(r.c.in)}</td><td class="num">${usd(r.c.out)}</td><td class="num">${usd(r.v)}</td></tr>`).join("")}</table></div>
               <div><h4>Category scores</h4><table class="plain"><tr><th>Category</th><th class="num">Score</th><th class="num">Coverage</th><th class="num">$/100 pts</th></tr>
                 ${Object.entries(cats).map(([k, c]) => { const x = m.scores[k]; return `<tr><td>${esc(c.label)}</td>${x ? `<td class="num">${num1(x.s)}</td><td class="num">${Math.round(x.cov * 100)}% · ${x.n}</td><td class="num">${usd(usd100(m._cost, x.s))}</td>` : '<td class="num muted">—</td><td class="num muted">too little data</td><td></td>'}</tr>`; }).join("")}</table>
-                <h4 style="margin-top:12px">Alias fit</h4><div class="chip-row">${Object.keys(DATA.config.aliases).map((a) => `<span class="chip active" style="cursor:default">${esc(a)} ${m.fit[a] == null ? "—" : num1(m.fit[a])}</span>`).join("")}</div></div>
+                <h4 style="margin-top:12px">Alias fit</h4><div class="chip-row">${Object.keys(DATA.config.aliases).map((a) => `<button class="chip active" data-fit="${esc(a)}" data-fitmodel="${esc(m.id)}" title="How was this fit calculated?">${esc(a)} ${m.fit[a] == null ? "—" : num1(m.fit[a])}</button>`).join("")}</div></div>
               <div><h4>Benchmark metrics</h4><table class="plain"><tr><th>Metric</th><th class="num">Value</th><th class="num">0–100</th></tr>
                 ${metricRows.length ? metricRows.map((r) => `<tr><td title="${esc(r.meta.desc)}">${esc(r.meta.label)}${r.d.how === "family" ? ' <span class="tag fam" title="Matched by model family, not the exact snapshot">family</span>' : ""}<div class="muted" style="font-size:.7rem">${esc(r.d.label)}</div></td><td class="num">${esc(r.d.v >= 1000 ? Math.round(r.d.v) : r.d.v.toFixed(1))}</td><td class="num">${r.d.s == null ? "—" : num1(r.d.s)}</td></tr>`).join("") : '<tr><td colspan="3" class="muted">No benchmark data matched this model.</td></tr>'}</table></div>
             </div>`;
         el.hidden = false;
         $("closeDetail").onclick = () => { selectedId = null; el.hidden = true; renderTable(); };
+    }
+
+    // ── fit explainer ────────────────────────────────────────────────────────────────
+    const fitState = { alias: null, model: null, mode: "score", rows: 12 };
+    const sumOf = (xs) => xs.reduce((a, b) => a + b, 0);
+    const pct0 = (x) => Math.round(x * 100) + "%";
+    const shortName = (m) => m.name.replace(/^[^:]+: /, "");
+    const fmtRaw = (v) => (v == null ? "—" : Math.abs(v) >= 1000 ? String(Math.round(v)) : Math.abs(v) < 1 ? v.toFixed(2) : v.toFixed(1));
+    const metricShort = (k) => (DATA.metrics[k] && DATA.metrics[k].short) || k;
+
+    // Benchmarks that feed an alias, grouped by use case, with their nominal weights.
+    function fitColumns(alias) {
+        const a = DATA.config.aliases[alias], cats = DATA.config.categories;
+        const used = Object.keys(a.weights).filter((c) => a.weights[c] > 0 && cats[c]);
+        const totalAW = sumOf(used.map((c) => a.weights[c]));
+        return used.map((c) => {
+            const ms = Object.entries(cats[c].metrics).filter(([k]) => DATA.metrics[k] && DATA.metrics[k].scale).sort((x, y) => y[1] - x[1]);
+            const totalMW = sumOf(ms.map(([, w]) => w));
+            const aw = a.weights[c] / totalAW;
+            return { cat: c, aw, metrics: ms.map(([k, w]) => ({ k, w, eff: aw * (w / totalMW) })) };
+        });
+    }
+    // Decomposition of one model's fit into the points each benchmark adds. Weights are re-spread over
+    // whatever the model has, exactly as the Python build does, so the points add up to the fit (±0.1 rounding).
+    function fitBreakdown(m, alias) {
+        const a = DATA.config.aliases[alias], cats = DATA.config.categories;
+        const have = Object.keys(a.weights).filter((c) => a.weights[c] > 0 && m.scores[c]);
+        const totalAW = sumOf(have.map((c) => a.weights[c]));
+        const out = { have, aw: {}, catScore: {}, pts: {}, catPts: {} };
+        for (const c of have) {
+            const avail = Object.entries(cats[c].metrics).filter(([k]) => m.metrics[k] && m.metrics[k].s != null);
+            const totalMW = sumOf(avail.map(([, w]) => w));
+            out.aw[c] = a.weights[c] / totalAW; out.catScore[c] = m.scores[c].s; out.catPts[c] = 0;
+            for (const [k, w] of avail) { const p = out.aw[c] * (w / totalMW) * m.metrics[k].s; out.pts[c + "|" + k] = p; out.catPts[c] += p; }
+        }
+        return out;
+    }
+    function whyNotRanked(m, alias) {
+        const a = { ...DATA.config.aliases[alias], max_cost: effectiveCap(alias) };
+        if (m.fit[alias] == null) return `too little data (${pct0(m.fit_cov[alias] || 0)} of this alias's weight; needs ${pct0(a.min_share ?? 0.6)})`;
+        if (m._cost == null) return "no current price";
+        if (!eligible(m, a)) return a.max_cost != null && m._cost > a.max_cost ? `over the ${usd(a.max_cost)} cap` : "outside this alias's requirements";
+        return null;
+    }
+    function fitExample(m, alias) {
+        const fb = fitBreakdown(m, alias), cats = DATA.config.categories, w = DATA.config.aliases[alias].weights;
+        if (m.fit[alias] == null || !fb.have.length) return `<p class="muted">${esc(shortName(m))} has too little data for a ${esc(alias)} fit.</p>`;
+        const terms = fb.have.map((c) => `${esc(cats[c].short)} <b>${num1(fb.catScore[c])}</b> × ${pct0(fb.aw[c])}`).join(" + ");
+        const dropped = Object.keys(w).filter((c) => w[c] > 0 && !fb.have.includes(c)).map((c) => cats[c].short.toLowerCase());
+        return `<p class="example"><b>Worked example, ${esc(shortName(m))}:</b> ${terms} = <b>${num1(m.fit[alias])}</b>${dropped.length ? `<br><span class="muted">No ${esc(dropped.join(" / "))} score for this model, so that weight was spread over the others (which is why the percentages differ from the alias weights).</span>` : ""}</p>`;
+    }
+    function openFit(alias, modelId) {
+        fitState.alias = alias; fitState.model = modelId && byId[modelId] ? modelId : null;
+        $("fitModal").hidden = false; document.body.style.overflow = "hidden";
+        renderFit(); $("fitModal").querySelector(".modal-card").scrollTop = 0; $("fitClose").focus();
+    }
+    function closeFit() { $("fitModal").hidden = true; document.body.style.overflow = ""; }
+    function renderFit() {
+        const alias = fitState.alias, a = DATA.config.aliases[alias];
+        if (!a) return;
+        const cats = DATA.config.categories, sc = DATA.config.scoring || { low_quantile: 0.05, high_quantile: 0.99, min_coverage: 0.35 };
+        const cols = fitColumns(alias), st = aliasState(alias), cap = effectiveCap(alias), mode = fitState.mode;
+        const card = $("fitModal").querySelector(".modal-card"), keep = card.scrollTop;
+        const weights = cols.map((c) => `${esc(cats[c.cat].short)} ${pct0(c.aw)}`).join(" · ");
+        const limits = [cap == null ? null : cap === 0 ? "free only" : `blended cost ≤ ${usd(cap)}/M`,
+            ...(a.require || []).filter((r) => r !== "free").map((r) => (r === "tools" ? "tool use" : r === "reasoning" ? "reasoning support" : r)),
+            a.min_context ? `≥${Math.round(a.min_context / 1000)}k context` : null].filter(Boolean).join(", ") || "no limits";
+        const exId = fitState.model || (st.top && st.top.id), ex = exId && byId[exId];
+
+        const benchRows = cols.map((c) => c.metrics.map((x, i) => {
+            const meta = DATA.metrics[x.k];
+            return `<tr>${i === 0 ? `<td rowspan="${c.metrics.length}"><b>${esc(cats[c.cat].label)}</b><div class="muted">${pct0(c.aw)} of fit</div></td>` : ""}
+                <td title="${esc(meta.desc)}">${esc(meta.label)}</td><td class="num">×${x.w}</td><td class="num">${(x.eff * 100).toFixed(1)}%</td><td class="num">${meta.models}</td>
+                <td class="num">${fmtRaw(meta.scale.lo)} → ${fmtRaw(meta.scale.hi)} <span class="muted">${esc(meta.unit)}</span></td>
+                <td><a href="${esc(meta.url)}" target="_blank" rel="noopener">${esc(meta.source_label)}</a> <span class="muted">· ${esc(meta.as_of || "")}</span></td></tr>`;
+        }).join("")).join("");
+
+        const ranked = st.ranked.map((c) => c.id);
+        const extra = [fitState.model, currentModelFor(alias)].filter((id) => id && byId[id] && !ranked.slice(0, fitState.rows).includes(id));
+        const ids = [...ranked.slice(0, fitState.rows), ...new Set(extra)];
+        const head1 = cols.map((c) => `<th colspan="${c.metrics.length + 1}" class="grp">${esc(cats[c.cat].label)} · ${pct0(c.aw)}</th>`).join("");
+        const head2 = cols.map((c) => c.metrics.map((x) => `<th class="num mh" title="${esc(DATA.metrics[x.k].label)}: weight ×${x.w} in ${esc(cats[c.cat].short)}; ${(x.eff * 100).toFixed(1)}% of the ${esc(alias)} fit when present">${esc(metricShort(x.k))}<small>${(x.eff * 100).toFixed(0)}%</small></th>`).join("")
+            + `<th class="num sub">${esc(cats[c.cat].short)}</th>`).join("");
+        const body = ids.map((id) => {
+            const m = byId[id], fb = fitBreakdown(m, alias), why = whyNotRanked(m, alias), rk = ranked.indexOf(id);
+            const cells = cols.map((c) => {
+                const counted = fb.have.includes(c.cat);
+                const mc = c.metrics.map((x) => {
+                    const d = m.metrics[x.k], meta = DATA.metrics[x.k];
+                    if (!d || d.s == null) return `<td class="num muted" title="${esc(meta.label)}: not tested">—</td>`;
+                    const tip = `${meta.label}: ${fmtRaw(d.v)} ${meta.unit} → ${d.s}/100 (weight ×${x.w})${d.how === "family" ? " · matched by model family" : ""}`;
+                    if (!counted) return `<td class="num ghost" title="${esc(tip)} — not counted: too little data for this use case">${Math.round(d.s)}</td>`;
+                    const shown = mode === "pts" ? fb.pts[c.cat + "|" + x.k].toFixed(1) : Math.round(d.s);
+                    return `<td class="num" style="background:rgba(59,130,246,${(0.06 + d.s / 100 * 0.5).toFixed(2)})" title="${esc(tip)}">${shown}</td>`;
+                }).join("");
+                const sub = counted ? (mode === "pts" ? fb.catPts[c.cat].toFixed(1) : num1(fb.catScore[c.cat])) : "—";
+                return mc + `<td class="num sub">${sub}</td>`;
+            }).join("");
+            return `<tr class="${fitState.model === id ? "hl" : ""}"><td class="num muted">${rk >= 0 ? rk + 1 : "—"}</td>
+                <td class="stick"><span class="mname" data-model="${esc(id)}">${esc(shortName(m))}</span>${why ? `<div class="muted why">not ranked: ${esc(why)}</div>` : ""}</td>
+                <td class="num">${usdM(m._cost)}</td>${cells}<td class="num muted">${pct0(m.fit_cov[alias] || 0)}</td><td class="num fit"><b>${num1(m.fit[alias])}</b></td></tr>`;
+        }).join("") || `<tr><td colspan="9" class="muted" style="padding:16px">No model has enough data under the current limits.</td></tr>`;
+
+        const tab = (attr, val, label, on) => `<button class="tab ${on ? "active" : ""}" data-${attr}="${val}">${label}</button>`;
+        $("fitBody").innerHTML = `<h2 id="fitTitle">How the “${esc(alias)}” fit is calculated</h2>
+            <p class="lead">Fit is a 0–100 score: the weighted average of the use-case scores, using this alias's weights — <b>${weights}</b>. Ranked among models that meet its limits (${esc(limits)}).</p>
+            <ol class="steps">
+              <li><b>Benchmark → 0–100.</b> Each benchmark is rescaled so the ${Math.round(sc.low_quantile * 100)}th percentile of every model you can currently buy ≈ 0 and the ${Math.round(sc.high_quantile * 100)}th ≈ 100 (the “0 → 100” column). That puts Elo, % correct and index scores on one scale.</li>
+              <li><b>Benchmarks → use-case score.</b> Weighted average of the benchmarks the model has, with the weights below. A use case only counts if the model has ≥ ${pct0(sc.min_coverage)} of its benchmark weight.</li>
+              <li><b>Use cases → fit.</b> Weighted average of the use-case scores. A missing score is never treated as 0: its weight is spread over the rest, and the model needs ≥ ${pct0(a.min_share ?? 0.6)} of this alias's weight (the <i>Data</i> column) to be ranked at all.</li>
+            </ol>
+            ${ex ? fitExample(ex, alias) : ""}
+            <h3>Benchmarks used</h3>
+            <div class="tscroll"><table class="plain"><tr><th>Use case</th><th>Benchmark</th><th class="num" title="Weight inside the use case">Weight</th><th class="num" title="Share of the fit if the model has every benchmark">Share of fit</th><th class="num">Models scored</th><th class="num" title="Raw value that maps to 0 → 100">0 → 100 means</th><th>Source</th></tr>${benchRows}</table></div>
+            <h3>How each model scored</h3>
+            <div class="fit-controls"><div class="tabs">${tab("fitmode", "score", "Score 0–100", mode === "score")}${tab("fitmode", "pts", "Points added to fit", mode === "pts")}</div>
+              <div class="tabs">${[12, 25, 50].map((n) => tab("fitrows", n, "Top " + n, fitState.rows === n)).join("")}</div></div>
+            <div class="tscroll"><table class="plain fit-table"><tr><th colspan="3"></th>${head1}<th colspan="2"></th></tr>
+              <tr><th class="num">#</th><th class="stick">Model</th><th class="num">$/M</th>${head2}<th class="num">Data</th><th class="num">Fit</th></tr>${body}</table></div>
+            <p class="muted foot">Cells are the benchmark rescaled to 0–100 (hover for the raw value); the small percentage under each header is that benchmark's share of the fit when present. In <i>points</i> mode each cell is its contribution to the fit, so a row adds up to Fit (±0.1 from rounding). “—” = not tested; faint numbers = tested but not counted because the use case had too little data overall. Models are those ranked under the current cap, plus the model you clicked and the one set for this alias.</p>`;
+        card.scrollTop = keep;
     }
 
     // ── methodology / sources ────────────────────────────────────────────────────────
@@ -539,9 +764,11 @@
                 .map(([m, w]) => `<li title="${esc(DATA.metrics[m].desc)}"><span>${esc(DATA.metrics[m].label)} <span class="muted">×${w}</span></span><span>${DATA.metrics[m].models} models</span></li>`).join("");
             return `<div class="card"><h3>${esc(c.label)}</h3><ul>${items}</ul></div>`;
         }).join("");
-        $("methodology").innerHTML = cards + `<div class="card"><h3>Scoring</h3>
-            <p>Each metric is rescaled to 0–100 between its 5th and 99th percentile across currently purchasable models, so Elo, % and index scales can be averaged.</p>
-            <p>A category score is the weighted mean of the metrics a model has (weights ×n, editable in <code>config.json</code>), shown only if they carry ≥35% of the category's weight. Under 60% is flagged <i>thin</i>.</p>
+        const sc = cfg.scoring || { low_quantile: 0.05, high_quantile: 0.99, min_coverage: 0.35, confident_coverage: 0.6 };
+        const aliasW = Object.entries(cfg.aliases).map(([n, a]) => `<li><span>${esc(n)}</span><span>${Object.entries(a.weights).filter(([, w]) => w > 0).sort((x, y) => y[1] - x[1]).map(([c, w]) => `${esc(cfg.categories[c].short)} ${Math.round(w * 100)}%`).join(" · ")}</span></li>`).join("");
+        $("methodology").innerHTML = cards + `<div class="card"><h3>Alias fit weights</h3><ul>${aliasW}</ul><p class="muted" style="margin-top:6px">Fit = weighted average of the use-case scores. Click any fit number for the full breakdown.</p></div><div class="card"><h3>Scoring</h3>
+            <p>Each metric is rescaled to 0–100 between its ${Math.round(sc.low_quantile * 100)}th and ${Math.round(sc.high_quantile * 100)}th percentile across currently purchasable models, so Elo, % and index scales can be averaged.</p>
+            <p>A category score is the weighted mean of the metrics a model has (weights ×n, editable in <code>config.json</code>), shown only if they carry ≥${Math.round(sc.min_coverage * 100)}% of the category's weight. Under ${Math.round(sc.confident_coverage * 100)}% is flagged <i>thin</i>.</p>
             <p>Lowest cost = cheapest of primary-provider list price, OpenRouter's cheapest healthy endpoint, and Nous Portal. Batch, priority/flex tiers and third-party 4-bit endpoints are excluded.</p>
             <p>Reasoning models spend extra output tokens, so per-token cost understates their real cost per task.</p></div>`;
     }
@@ -579,6 +806,7 @@
             toast("No benchmark data yet — check the Sources section");
         }
         renderControls(); renderAliases(); renderCharts(); renderTable(); renderDetail(); renderMethod(); renderSources(null);
+        if (!$("fitModal").hidden) renderFit();
         updateFooter();
     }
     function rerenderViews() { renderControls(); renderAliases(); renderCharts(); renderTable(); renderDetail(); }
@@ -586,25 +814,40 @@
 
     function bind() {
         document.addEventListener("click", (e) => {
-            const t = e.target.closest("[data-dim],[data-lab],[data-model],[data-view],[data-sort],[data-capreset]");
+            const t = e.target.closest("[data-dim],[data-lab],[data-model],[data-view],[data-sort],[data-capreset],[data-fit],[data-fitmode],[data-fitrows],[data-mine]");
             if (!t) return;
             if (t.dataset.dim) { P.dim = t.dataset.dim; savePrefs(); rerenderViews(); }
             else if (t.dataset.lab) { const g = t.dataset.lab, i = P.labsOff.indexOf(g); if (i >= 0) P.labsOff.splice(i, 1); else P.labsOff.push(g); savePrefs(); renderControls(); renderCharts(); renderTable(); }
             else if (t.dataset.view) { P.dim = "alias:" + t.dataset.view; P.grid = false; savePrefs(); rerenderViews(); $("chartBox").scrollIntoView({ behavior: "smooth", block: "start" }); }
-            else if (t.dataset.capreset) { delete P.capOverride[t.dataset.capreset]; savePrefs(); renderAliases(); renderCharts(); }
+            else if (t.dataset.capreset) { delete P.capOverride[t.dataset.capreset]; savePrefs(); refreshAlias(t.dataset.capreset); renderCharts(); }
+            else if (t.dataset.fitmode) { fitState.mode = t.dataset.fitmode; renderFit(); }
+            else if (t.dataset.fitrows) { fitState.rows = Number(t.dataset.fitrows); renderFit(); }
+            else if (t.dataset.fit) openFit(t.dataset.fit, t.dataset.fitmodel || null);
+            else if (t.dataset.mine !== undefined) { P.mineOnly = t.dataset.mine === "1"; savePrefs(); renderControls(); renderCharts(); renderMineNote(); }
             else if (t.dataset.sort !== undefined && t.closest("#tableHead")) {
                 const k = t.dataset.sort; if (!k) return;
                 P.sort = P.sort.key === k ? { key: k, dir: -P.sort.dir } : { key: k, dir: k === "score" || k.startsWith("cat:") ? -1 : 1 };
                 savePrefs(); renderTable();
-            } else if (t.dataset.model) select(t.dataset.model);
+            } else if (t.dataset.model) { if (!$("fitModal").hidden) closeFit(); select(t.dataset.model); }
+        });
+        $("aliasGrid").addEventListener("input", (e) => {
+            const t = e.target;
+            if (!t.dataset.capslider) return;
+            const name = t.dataset.capslider, cap = posToCap(Number(t.value));
+            P.capOverride[name] = cap === null ? "none" : cap;
+            savePrefs(); refreshAlias(name, { skipSlider: true }); redrawChartsSoon();
         });
         $("aliasGrid").addEventListener("change", (e) => {
             const t = e.target;
-            if (t.dataset.cap) { const v = t.value.trim(); P.capOverride[t.dataset.cap] = v === "" ? "none" : Math.max(0, Number(v)); savePrefs(); renderAliases(); renderCharts(); }
-            else if (t.dataset.current !== undefined) {
+            if (t.dataset.cap) {
+                const name = t.dataset.cap, v = t.value.trim(), n = Number(v);
+                if (v === "") P.capOverride[name] = "none";
+                else if (Number.isFinite(n) && n >= 0) P.capOverride[name] = n;
+                savePrefs(); refreshAlias(name); t.value = effectiveCap(name) ?? ""; renderCharts();
+            } else if (t.dataset.current !== undefined) {
                 const v = t.value.trim(), name = t.dataset.current;
                 const hit = byId[v] ? v : (DATA.models.find((m) => m.name.toLowerCase() === v.toLowerCase()) || {}).id;
-                P.current[name] = hit || v; savePrefs(); renderAliases(); renderCharts();
+                P.current[name] = hit || v; savePrefs(); refreshAlias(name); renderCharts(); renderMineNote();
             }
         });
         const on = (id, ev, fn) => $(id).addEventListener(ev, fn);
@@ -625,6 +868,9 @@
             catch (e) { toast("Could not start refresh"); $("refreshBtn").disabled = false; }
         });
         on("themeToggle", "click", () => { P.theme = P.theme === "dark" ? "light" : "dark"; applyTheme(); savePrefs(); if (DATA) renderCharts(); });
+        on("fitClose", "click", closeFit);
+        on("fitModal", "click", (e) => { if (e.target === $("fitModal")) closeFit(); });
+        document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("fitModal").hidden) closeFit(); });
     }
     function applyTheme() {
         document.documentElement.setAttribute("data-theme", P.theme);
@@ -634,6 +880,7 @@
     function init() {
         const ann = window.chartjsPluginAnnotation || window["chartjs-plugin-annotation"];
         if (ann) Chart.register(ann);
+        Chart.register(aliasLabelPlugin);
         Chart.defaults.font.family = getComputedStyle(document.body).fontFamily;
         applyTheme(); bind(); poll();
     }

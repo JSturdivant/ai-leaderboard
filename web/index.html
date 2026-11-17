@@ -33,16 +33,6 @@
 
     <main id="mainContent" hidden>
 
-        <!-- Alias picker -->
-        <section class="block">
-            <div class="block-head">
-                <h2 class="section-title">Alias picker</h2>
-                <p class="block-note">Best model for each of your aliases under its cost cap. <b>Top fit</b> = highest score. <b>Best value</b> = cheapest model within <span id="tolPct">10</span>% of the top fit. Costs are blended $/M tokens at the basis selected below.</p>
-            </div>
-            <div class="alias-grid" id="aliasGrid"></div>
-            <datalist id="modelList"></datalist>
-        </section>
-
         <!-- Matrix -->
         <section class="block">
             <div class="block-head">
@@ -53,6 +43,10 @@
                 <div class="control-group">
                     <label>Dimension</label>
                     <div class="tabs" id="dimTabs"></div>
+                </div>
+                <div class="control-group">
+                    <label>Models shown</label>
+                    <div class="tabs" id="mineTabs"></div>
                 </div>
                 <div class="control-group">
                     <label for="blendSelect">Cost basis</label>
@@ -103,7 +97,18 @@
             </div>
             <div class="chart-container" id="chartBox"><canvas id="scatterChart"></canvas></div>
             <div class="chart-grid" id="chartGrid" hidden></div>
+            <div class="mine-note" id="mineNote" hidden></div>
             <div class="detail" id="detailPanel" hidden></div>
+        </section>
+
+        <!-- Alias picker -->
+        <section class="block">
+            <div class="block-head">
+                <h2 class="section-title">Alias picker</h2>
+                <p class="block-note">Best model for each of your aliases under its cost cap (drag the slider or type a value). <b>Top fit</b> = highest score. <b>Best value</b> = cheapest model within <span id="tolPct">10</span>% of the top fit. Costs use the cost basis selected in the matrix controls. <b>Fit</b> blends the four use-case scores with weights per alias: click any fit number, or <i>How is fit calculated?</i>, to see every benchmark and how each model scored.</p>
+            </div>
+            <div class="alias-grid" id="aliasGrid"></div>
+            <datalist id="modelList"></datalist>
         </section>
 
         <!-- $/Intelligence leaderboard -->
@@ -155,6 +160,12 @@
     <footer class="footer">
         <p id="footerText">Runs locally. Data saved to <code>data/latest.json</code>. Benchmarks: Artificial Analysis (via OpenRouter), Epoch AI (CC-BY 4.0), Arena (CC-BY 4.0).</p>
     </footer>
+</div>
+<div class="modal" id="fitModal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="fitTitle">
+        <button class="btn btn-sm close" id="fitClose">Close</button>
+        <div id="fitBody"></div>
+    </div>
 </div>
 <div class="toast" id="toast" hidden></div>
 

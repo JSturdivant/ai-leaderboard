@@ -317,6 +317,7 @@ def build(cfg, now=None):
             "current_models": cfg.get("current_models") or {},
             "age": cfg["age"],
             "score_floor_for_ratio": sc_cfg["score_floor_for_ratio"],
+            "scoring": {k: sc_cfg[k] for k in ("low_quantile", "high_quantile", "min_coverage", "confident_coverage")},
         },
         "sources": sources,
         "metrics": metric_meta,

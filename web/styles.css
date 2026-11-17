@@ -255,3 +255,47 @@ td.num { font-variant-numeric: tabular-nums; }
     .chart-grid { grid-template-columns: 1fr; }
     .control-actions { margin-left: 0; }
 }
+
+/* ========== Cap slider ========== */
+.cap-slider { position: relative; padding: 0 2px 14px; margin-top: -2px; }
+.cap-slider input[type="range"] { width: 100%; accent-color: var(--accent); cursor: pointer; margin: 0; }
+.cap-marks { position: relative; height: 12px; font-size: 0.64rem; color: var(--text-muted); pointer-events: none; }
+.cap-marks span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
+.cap-marks span:first-child { transform: none; }
+.cap-marks span:last-child { transform: translateX(-100%); }
+
+/* ========== Fit link, matrix-only note ========== */
+.fitlink { color: var(--accent); cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; }
+.fitlink:hover { text-decoration-style: solid; }
+.mine-note { margin-top: 10px; font-size: 0.82rem; color: var(--text-secondary); background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-sm); padding: 10px 14px; line-height: 1.5; }
+.mine-note b { color: var(--text-primary); }
+
+/* ========== Fit dialog ========== */
+.modal { position: fixed; inset: 0; background: rgba(5, 8, 15, 0.62); z-index: 30; display: flex; align-items: flex-start; justify-content: center; padding: 4vh 16px; overflow: hidden; }
+.modal-card { position: relative; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius); box-shadow: var(--shadow); width: min(1280px, 100%); max-height: 92vh; overflow: auto; padding: 22px 26px 26px; }
+.modal-card .close { position: sticky; float: right; top: 0; z-index: 3; }
+.modal-card h2 { font-size: 1.25rem; margin-bottom: 8px; }
+.modal-card h3 { font-size: 1rem; margin: 20px 0 8px; }
+.modal-card .lead { color: var(--text-secondary); font-size: 0.92rem; max-width: 980px; }
+.steps { margin: 12px 0 8px 20px; color: var(--text-secondary); font-size: 0.86rem; line-height: 1.55; max-width: 980px; }
+.steps li { margin-bottom: 4px; } .steps b { color: var(--text-primary); }
+.example { background: var(--accent-soft); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 0.88rem; margin: 10px 0; max-width: 980px; }
+.tscroll { overflow: auto; border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); }
+.fit-controls { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+.fit-table th.grp { text-align: center; background: var(--accent-soft); color: var(--text-primary); border-left: 1px solid var(--border-color); }
+.fit-table th.mh { font-size: 0.62rem; line-height: 1.15; min-width: 56px; vertical-align: bottom; white-space: normal; }
+.fit-table th.mh small { display: block; font-weight: 500; opacity: 0.7; text-transform: none; }
+.fit-table th.sub, .fit-table td.sub { border-left: 1px solid var(--border-color); border-right: 1px solid var(--border-color); font-weight: 700; background: var(--table-head); color: var(--text-primary); }
+.fit-table td { padding: 5px 8px; white-space: nowrap; }
+.fit-table td.stick, .fit-table th.stick { position: sticky; left: 0; background: var(--bg-card); z-index: 1; min-width: 190px; white-space: normal; }
+.fit-table th.stick { background: var(--table-head); }
+.fit-table td.ghost { color: var(--text-muted); font-style: italic; }
+.fit-table td.fit { font-size: 0.95rem; }
+.fit-table tr.hl td { outline: 1px solid var(--accent); outline-offset: -1px; }
+.fit-table .mname { cursor: pointer; } .fit-table .mname:hover { color: var(--accent); }
+.fit-table .why { font-size: 0.68rem; font-weight: 400; }
+.foot { margin-top: 10px; font-size: 0.78rem; max-width: 980px; line-height: 1.5; }
+
+/* ========== Links ========== */
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }

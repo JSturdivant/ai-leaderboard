@@ -149,6 +149,19 @@ class BuildTests(unittest.TestCase):
         self.assertEqual(self.d["alias_picks"]["Free"]["top"], None if self.by["acme/beta-free:free"]["fit"]["Free"] is None else "acme/beta-free:free")
         self.assertEqual(cheap["current"]["id"], "acme/gamma-2")
 
+    def test_config_echo_carries_what_the_fit_dialog_explains(self):
+        sc = self.d["config"]["scoring"]
+        self.assertEqual((sc["low_quantile"], sc["high_quantile"], sc["min_coverage"]), (0.0, 1.0, 0.3))
+        self.assertEqual(self.d["config"]["categories"]["coding"]["short"], "Coding")
+        self.assertIn("min_share", self.d["config"]["aliases"]["Free"])
+
+    def test_fit_is_the_weighted_mean_of_category_scores(self):
+        a = self.by["acme/alpha-1"]
+        w = self.d["config"]["aliases"]["Cheap"]["weights"]
+        have = {c: w[c] for c in w if c in a["scores"]}
+        expect = sum(a["scores"][c]["s"] * wt for c, wt in have.items()) / sum(have.values())
+        self.assertAlmostEqual(a["fit"]["Cheap"], expect, places=1)
+
     def test_unmatched_diagnostics_lists_unknown_names(self):
         self.assertIn("unknown-model", [u["name"] for u in self.d["diagnostics"]["unmatched"]])
 
