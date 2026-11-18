@@ -1,6 +1,8 @@
 {
-  "server": { "host": "127.0.0.1", "port": 8787 },
-
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8787
+  },
   "refresh": {
     "intervals_minutes": {
       "openrouter": 30,
@@ -19,27 +21,80 @@
     "check_seconds": 60,
     "workers": 8
   },
-
   "cost": {
-    "blend": { "input": 3, "output": 1 },
-    "exclude_variants": ["batch", "US"],
+    "blend": {
+      "input": 3,
+      "output": 1
+    },
+    "exclude_variants": [
+      "batch",
+      "US"
+    ],
     "min_uptime_pct": 80,
     "include_service_tiers": [],
-    "exclude_quantizations": ["int4", "fp4", "mxfp4", "nvfp4"],
+    "exclude_quantizations": [
+      "int4",
+      "fp4",
+      "mxfp4",
+      "nvfp4"
+    ],
     "primary_litellm_providers": {
-      "openai": ["openai"], "anthropic": ["anthropic"], "gemini": ["google"], "xai": ["x-ai"],
-      "deepseek": ["deepseek"], "mistral": ["mistralai"], "moonshot": ["moonshotai"],
-      "zai": ["z-ai"], "minimax": ["minimax"], "dashscope": ["qwen"],
-      "meta_llama": ["meta-llama", "meta"], "tencent": ["tencent"], "xiaomi_mimo": ["xiaomi"],
-      "cohere_chat": ["cohere"]
+      "openai": [
+        "openai"
+      ],
+      "anthropic": [
+        "anthropic"
+      ],
+      "gemini": [
+        "google"
+      ],
+      "xai": [
+        "x-ai"
+      ],
+      "deepseek": [
+        "deepseek"
+      ],
+      "mistral": [
+        "mistralai"
+      ],
+      "moonshot": [
+        "moonshotai"
+      ],
+      "zai": [
+        "z-ai"
+      ],
+      "minimax": [
+        "minimax"
+      ],
+      "dashscope": [
+        "qwen"
+      ],
+      "meta_llama": [
+        "meta-llama",
+        "meta"
+      ],
+      "tencent": [
+        "tencent"
+      ],
+      "xiaomi_mimo": [
+        "xiaomi"
+      ],
+      "cohere_chat": [
+        "cohere"
+      ]
     },
     "primary_openrouter_providers": {
-      "qwen": ["Alibaba"],
-      "meta-llama": ["Meta"],
-      "meta": ["Meta"]
+      "qwen": [
+        "Alibaba"
+      ],
+      "meta-llama": [
+        "Meta"
+      ],
+      "meta": [
+        "Meta"
+      ]
     }
   },
-
   "scoring": {
     "low_quantile": 0.05,
     "high_quantile": 0.99,
@@ -48,7 +103,6 @@
     "confident_coverage": 0.6,
     "score_floor_for_ratio": 5
   },
-
   "categories": {
     "coding": {
       "label": "Coding / Engineering",
@@ -101,63 +155,123 @@
       }
     }
   },
-
   "aliases": {
     "Free": {
       "note": "Zero-cost models only (OpenRouter :free, Nous Portal :free).",
       "max_cost": 0,
-      "require": ["free"],
+      "require": [
+        "free"
+      ],
       "min_share": 0.4,
-      "weights": { "chat": 0.4, "agentic": 0.2, "coding": 0.2, "reasoning": 0.2 }
+      "weights": {
+        "chat": 0.4,
+        "agentic": 0.2,
+        "coding": 0.2,
+        "reasoning": 0.2
+      }
     },
     "Cheap": {
       "note": "High-volume utility work: summaries, routing, classification, sub-agents.",
       "max_cost": 0.1,
-      "weights": { "chat": 0.4, "agentic": 0.3, "reasoning": 0.15, "coding": 0.15 }
+      "weights": {
+        "chat": 0.4,
+        "agentic": 0.3,
+        "reasoning": 0.15,
+        "coding": 0.15
+      }
     },
     "Daily": {
       "note": "Default conversational driver. No cap was specified; 0.50 is an assumption, edit freely.",
       "max_cost": 0.5,
-      "weights": { "chat": 0.45, "agentic": 0.25, "reasoning": 0.15, "coding": 0.15 }
+      "weights": {
+        "chat": 0.45,
+        "agentic": 0.25,
+        "reasoning": 0.15,
+        "coding": 0.15
+      }
     },
     "Big": {
       "note": "Stronger all-rounder under $1/M.",
       "max_cost": 1.0,
-      "weights": { "chat": 0.25, "agentic": 0.25, "reasoning": 0.25, "coding": 0.25 }
+      "weights": {
+        "chat": 0.25,
+        "agentic": 0.25,
+        "reasoning": 0.25,
+        "coding": 0.25
+      }
     },
     "Jumbo": {
       "note": "Strongest all-rounder under $2/M.",
       "max_cost": 2.0,
-      "weights": { "chat": 0.25, "agentic": 0.25, "reasoning": 0.25, "coding": 0.25 }
+      "weights": {
+        "chat": 0.25,
+        "agentic": 0.25,
+        "reasoning": 0.25,
+        "coding": 0.25
+      }
     },
     "Thinking": {
       "note": "Hard reasoning / planning. Needs reasoning support. No cost cap by default.",
       "max_cost": null,
-      "require": ["reasoning"],
-      "weights": { "reasoning": 0.7, "agentic": 0.15, "chat": 0.15 }
+      "require": [
+        "reasoning"
+      ],
+      "weights": {
+        "reasoning": 0.7,
+        "agentic": 0.15,
+        "chat": 0.15
+      }
     },
     "Coding": {
       "note": "Software engineering. Needs tool use and a large context. No cost cap by default.",
       "max_cost": null,
-      "require": ["tools"],
+      "require": [
+        "tools"
+      ],
       "min_context": 128000,
-      "weights": { "coding": 0.75, "agentic": 0.25 }
+      "weights": {
+        "coding": 0.75,
+        "agentic": 0.25
+      }
     },
     "Task": {
       "note": "Autonomous multi-step task execution. Needs tool use and a large context. No cost cap by default.",
       "max_cost": null,
-      "require": ["tools"],
+      "require": [
+        "tools"
+      ],
       "min_context": 128000,
-      "weights": { "agentic": 0.75, "coding": 0.15, "reasoning": 0.1 }
+      "weights": {
+        "agentic": 0.75,
+        "coding": 0.15,
+        "reasoning": 0.1
+      }
     }
   },
-
+  "alias_value_tolerance": 0.1,
   "current_models": {
-    "Free": null, "Cheap": null, "Daily": null, "Big": null,
-    "Jumbo": null, "Thinking": null, "Coding": null, "Task": null
+    "Free": null,
+    "Cheap": "z-ai/glm-5.3-flash",
+    "Daily": "z-ai/glm-5.3-flash",
+    "Big": "z-ai/glm-5.3",
+    "Jumbo": "meta/muse-spark-1.3",
+    "Thinking": "xiaomi/mimo-v2.6-pro",
+    "Coding": null,
+    "Task": "z-ai/glm-5.3-flash",
+    "nous-daily": "deepseek/deepseek-v4-pro-0813",
+    "nous-cheap": "deepseek/deepseek-v4.1-flash",
+    "nous": "openai/gpt-5.6-sol",
+    "nous-big": "z-ai/glm-5.3",
+    "auto": "openrouter/auto"
   },
-
-  "age": { "fresh_days": 90, "faded_days": 450, "min_opacity": 0.12 },
-
-  "name_overrides": {}
+  "age": {
+    "fresh_days": 90,
+    "faded_days": 450,
+    "min_opacity": 0.12
+  },
+  "name_overrides": {},
+  "webhook": {
+    "url": "http://127.0.0.1:8791/sync",
+    "token": "XN3_4heZYcxWE4xh04WRn4Fa1agxuASz"
+  }
 }

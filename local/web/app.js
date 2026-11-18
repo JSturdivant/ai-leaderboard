@@ -586,21 +586,6 @@
         const gone = Object.keys(w).filter((c) => w[c] > 0 && !have[c]).map((c) => DATA.config.categories[c].short.toLowerCase());
         return gone.length ? `<div class="pick-sub">no ${gone.join(" / ")} data: fit is extrapolated from the rest</div>` : "";
     }
-    function verdict(st, name) {
-        const cur = st.current;
-        if (!cur) return `<div class="verdict muted">Enter the model you use for this alias to check it against the field.</div>`;
-        const nm = (id) => esc((byId[id] ? byId[id].name : id).replace(/^[^:]+: /, ""));
-        if (cur.status === "unknown") return `<div class="verdict bad">"${esc(cur.id)}" is not a model I can see right now.</div>`;
-        if (cur.status === "no_data") return `<div class="verdict warn">${nm(cur.id)} has too little benchmark data to score for this alias.</div>`;
-        const betterTxt = (cur.better || []).map((c) => `${nm(c.id)} (+${(c.fit - cur.fit).toFixed(1)} fit, ${usd(c.cost)})`).join("; ");
-        if (cur.status === "ineligible") {
-            const a = st.a, why = a.max_cost != null && cur.cost > a.max_cost ? `costs ${usd(cur.cost)}, over the ${usd(a.max_cost)} cap` : "does not meet this alias's requirements";
-            return `<div class="verdict warn">${nm(cur.id)} ${why}.${betterTxt ? " Better at ≤ its cost: " + betterTxt : ""}</div>`;
-        }
-        const rank = `#${cur.rank} of ${st.n} · fit ${num1(cur.fit)} · ${usd(cur.cost)}`;
-        if (betterTxt) return `<div class="verdict warn">${nm(cur.id)}: ${rank}. Better at same-or-lower cost: ${betterTxt}.</div>`;
-        return `<div class="verdict ok">${nm(cur.id)}: ${rank}. Nothing is both cheaper-or-equal and better, so it is on the efficient frontier.</div>`;
-    }
     // Cap slider: position 0 = $0 (free only), 1..99 = log scale $0.01..$50, 100 = no cap.
     const CAP_MIN = 0.01, CAP_MAX = 50, CAP_STEPS = 98;
     function capToPos(cap) {
@@ -891,11 +876,7 @@
 
     function aliasBody(name) {
         const st = aliasState(name);
-        const curVal = P.current[name] !== undefined ? P.current[name] : (DATA.config.current_models[name] || "");
         return `${topList(st, name)}
-            <div class="validate"><div class="pick-label">Validate your current model</div>
-                <input type="text" list="modelList" data-current="${esc(name)}" value="${esc(curVal)}" placeholder="e.g. z-ai/glm-5.3" autocomplete="off">
-                ${verdict(st, name)}</div>
             <div class="card-actions"><button class="btn btn-sm" data-view="${esc(name)}">Show on matrix</button>
                 <button class="btn btn-sm" data-fit="${esc(name)}">How is fit calculated?</button></div>`;
     }
@@ -1312,10 +1293,6 @@
                 if (v === "") P.capOverride[name] = "none";
                 else if (Number.isFinite(n) && n >= 0) P.capOverride[name] = n;
                 scheduleSave(); refreshAlias(name); t.value = effectiveCap(name) ?? ""; renderCharts();
-            } else if (t.dataset.current !== undefined) {
-                const v = t.value.trim(), name = t.dataset.current;
-                const hit = byId[v] ? v : (DATA.models.find((m) => m.name.toLowerCase() === v.toLowerCase()) || {}).id;
-                P.current[name] = hit || v; savePrefs(); refreshAlias(name); renderCharts(); renderMineNote();
             }
         });
         const on = (id, ev, fn) => $(id).addEventListener(ev, fn);

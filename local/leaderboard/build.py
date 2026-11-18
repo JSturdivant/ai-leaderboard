@@ -13,7 +13,7 @@ from .names import NameIndex, slug, strip_date
 from .sources import SOURCES
 from .store import load_raw, load_status, load_user_weights
 from .util import log, write_json_atomic
-from . import recommend, weights as weights_file
+from . import recommend, notify, weights as weights_file
 from .weights import UNSET, merge_alias
 
 _write_lock = threading.Lock()
@@ -357,13 +357,16 @@ def build(cfg, now=None):
 
 def build_and_write(cfg):
     data = build(cfg)
+    new_recs = recommend.build(data)
+    prev_recs = weights_file.load_recommendations()
     # Store the recommendations in weights.json *before* writing latest.json, so latest.json ends up the newer
     # file: the scheduler rebuilds when weights.json is newer, and must not mistake this write for a hand edit.
     try:
-        weights_file.write_recommendations(recommend.build(data))
+        weights_file.write_recommendations(new_recs)
     except OSError as exc:  # e.g. a read-only folder: the dashboard still works, only the stored copy goes stale
         log.warning("could not store recommendations in %s: %s", weights_file.weights_path(), exc)
     with _write_lock:  # the scheduler and a weights save can both rebuild; never interleave the two
         write_json_atomic(LATEST, data)
     log.info("wrote %s (%d models)", LATEST, len(data["models"]))
+    notify.notify_if_changed(prev_recs, new_recs, cfg)
     return data
