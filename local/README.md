@@ -31,8 +31,10 @@ the data fresh in the background; leave it running and the page updates live.
   tells you its rank and whether anything is both cheaper-or-equal and better.
 - **Fit explained** — click any *fit* number (or **How is fit calculated?**) for the formula, every
   benchmark with its weight and 0→100 scale, and a table of how each model scored on each benchmark.
-- **Fit weights** — every alias card has a collapsible panel with a slider for each dimension and each
-  benchmark. The % beside a slider is that item's share of the alias's fit (0 turns it off); the picks,
+- **Fit weights** — every alias card has a collapsible panel (open by default) with a slider for each
+  dimension (Coding, Agentic, Reasoning, …). Click the arrow beside a dimension to reveal its individual
+  benchmark sliders; they start collapsed, and open/closed state is remembered per card. The % beside a
+  slider is that item's share of the alias's fit (0 turns it off); the picks,
   matrix and dialog update as you drag. Every change is **saved automatically to `weights.json`** (see
   below), the card is marked *custom*, and **Reset to defaults** returns to the `config.json` weights.
 - **Glossary** (bottom of the page) — what each dimension and benchmark means, how to read its scale, its

@@ -37,7 +37,7 @@
     const DEFAULTS = {
         dim: "cat:coding", blend: "3:1", fade: 90, hide: 0, q: "", labsOff: [], frontier: true, caps: true, grid: false, mineOnly: false,
         minScore: 50, fEfficient: false, fFree: false, fTools: false, fConfident: false,
-        sort: { key: "usd", dir: 1 }, capOverride: {}, current: {}, theme: "dark", weights: {}, wOpen: {},
+        sort: { key: "usd", dir: 1 }, capOverride: {}, current: {}, theme: "dark", weights: {}, wOpen: {}, wCatOpen: {},
     };
     let legacyWeights = null, legacyCaps = null;  // settings an earlier version kept in this browser; moved into weights.json once
     const P = loadPrefs();  // (must come after the legacy variables: loadPrefs assigns them)
@@ -631,19 +631,24 @@
     }
     function weightsPanelInner(name) {
         const cats = DATA.config.categories;
-        const groups = weightRows(name).map((r) => `<div class="w-dim">
-            <div class="w-row dim"><a class="w-name" data-gloss="dim-${esc(r.c)}" title="${esc(cats[r.c].label)}: ${esc(cats[r.c].explain)}">${esc(cats[r.c].short)}</a>
+        // Each dimension row has a chevron that shows/hides its benchmark sliders (collapsed by default).
+        const groups = weightRows(name).map((r) => {
+            const open = !!P.wCatOpen[`${name}|${r.c}`], n = r.metrics.length;
+            return `<div class="w-dim">
+            <div class="w-row dim"><span class="w-lead">${n ? `<button type="button" class="w-tog" data-wcat="${esc(name)}|${esc(r.c)}" aria-expanded="${open}" title="${open ? "Hide" : "Show"} ${n} benchmark${n === 1 ? "" : "s"}" aria-label="${esc(cats[r.c].label)}: ${open ? "hide" : "show"} ${n} benchmark${n === 1 ? "" : "s"}"><span class="w-chev" aria-hidden="true">▸</span></button>` : `<span class="w-tog-gap"></span>`}<a class="w-name" data-gloss="dim-${esc(r.c)}" title="${esc(cats[r.c].label)}: ${esc(cats[r.c].explain)}">${esc(cats[r.c].short)}</a></span>
                 <input type="range" min="0" max="${DIM_MAX}" step="${DIM_STEP}" value="${r.cs}" data-wdim="${esc(name)}|${esc(r.c)}" aria-label="${esc(name)}: ${esc(cats[r.c].label)} weight">
                 <span class="w-val" data-wval="d|${esc(r.c)}">${shareText(r.dimShare)}</span></div>
-            ${r.metrics.map((m) => `<div class="w-row"><a class="w-name" data-gloss="${esc(m.k)}" title="${esc(DATA.metrics[m.k].label)} (click for the glossary entry)">${esc(metricShort(m.k))}</a>
+            <div class="w-mets" data-wmets="${esc(name)}|${esc(r.c)}" ${open ? "" : "hidden"}>${r.metrics.map((m) => `<div class="w-row"><a class="w-name" data-gloss="${esc(m.k)}" title="${esc(DATA.metrics[m.k].label)} (click for the glossary entry)">${esc(metricShort(m.k))}</a>
                 <input type="range" min="0" max="${MET_MAX}" step="${MET_STEP}" value="${m.x}" data-wmet="${esc(name)}|${esc(r.c)}|${esc(m.k)}" aria-label="${esc(name)}: ${esc(DATA.metrics[m.k].label)} weight">
-                <span class="w-val" data-wval="m|${esc(r.c)}|${esc(m.k)}">${shareText(m.share)}</span></div>`).join("")}</div>`).join("");
-        return `<p class="w-hint">Set how much each dimension and benchmark counts toward <b>${esc(name)}</b>'s fit. The % is each item's share of the fit; 0 turns it off. A benchmark a model wasn't tested on is never scored as 0. <b>Changes save automatically to weights.json.</b></p>
+                <span class="w-val" data-wval="m|${esc(r.c)}|${esc(m.k)}">${shareText(m.share)}</span></div>`).join("")}</div></div>`;
+        }).join("");
+        return `<p class="w-hint">Set how much each dimension and benchmark counts toward <b>${esc(name)}</b>'s fit. The % is each item's share of the fit; 0 turns it off. Click the arrow beside a dimension to show or hide its individual benchmarks. A benchmark a model wasn't tested on is never scored as 0. <b>Changes save automatically to weights.json.</b></p>
             ${groups}
             <div class="w-actions"><button class="btn btn-sm" data-wreset="${esc(name)}" title="Back to the config.json weights">Reset to defaults</button></div>`;
     }
     function weightsDetails(name) {
-        return `<details class="weights" data-wdetails="${esc(name)}" ${P.wOpen[name] ? "open" : ""}><summary>Fit weights <span class="badge" data-wbadge ${P.weights[name] ? "" : "hidden"}>custom</span></summary>
+        // open by default; only an explicit close (stored as false) keeps it collapsed
+        return `<details class="weights" data-wdetails="${esc(name)}" ${P.wOpen[name] === false ? "" : "open"}><summary>Fit weights <span class="badge" data-wbadge ${P.weights[name] ? "" : "hidden"}>custom</span></summary>
             <div class="w-panel" data-wpanel="${esc(name)}">${weightsPanelInner(name)}</div></details>`;
     }
     const aliasCardEl = (name) => $("aliasGrid").querySelector(`[data-alias="${CSS.escape(name)}"]`);
@@ -1259,9 +1264,18 @@
 
     function bind() {
         document.addEventListener("click", (e) => {
-            const t = e.target.closest("[data-dim],[data-lab],[data-model],[data-view],[data-sort],[data-capreset],[data-fit],[data-fitmode],[data-fitrows],[data-mine],[data-wreset],[data-gloss]");
+            const t = e.target.closest("[data-dim],[data-lab],[data-model],[data-view],[data-sort],[data-capreset],[data-fit],[data-fitmode],[data-fitrows],[data-mine],[data-wreset],[data-wcat],[data-gloss]");
             if (!t) return;
-            if (t.dataset.dim) { P.dim = t.dataset.dim; savePrefs(); rerenderViews(); }
+            if (t.dataset.wcat) {
+                const key = t.dataset.wcat, open = t.getAttribute("aria-expanded") !== "true", box = t.closest(".w-dim").querySelector("[data-wmets]");
+                const n = box ? box.children.length : 0, noun = `${n} benchmark${n === 1 ? "" : "s"}`;
+                if (box) box.hidden = !open;
+                t.setAttribute("aria-expanded", String(open));
+                t.title = `${open ? "Hide" : "Show"} ${noun}`;
+                t.setAttribute("aria-label", t.getAttribute("aria-label").replace(/: (show|hide) .*$/, `: ${open ? "hide" : "show"} ${noun}`));
+                P.wCatOpen[key] = open; savePrefs();
+            }
+            else if (t.dataset.dim) { P.dim = t.dataset.dim; savePrefs(); rerenderViews(); }
             else if (t.dataset.lab) { const g = t.dataset.lab, i = P.labsOff.indexOf(g); if (i >= 0) P.labsOff.splice(i, 1); else P.labsOff.push(g); savePrefs(); renderControls(); renderCharts(); renderTable(); }
             else if (t.dataset.view) { P.dim = "alias:" + t.dataset.view; P.grid = false; savePrefs(); rerenderViews(); $("chartBox").scrollIntoView({ behavior: "smooth", block: "start" }); }
             else if (t.dataset.capreset) { delete P.capOverride[t.dataset.capreset]; scheduleSave(); refreshAlias(t.dataset.capreset); renderCharts(); }
