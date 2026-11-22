@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Modelfit — the right LLM for every job, at the right price</title>
+    <meta name="description" content="Modelfit tracks live LLM prices across providers and two dozen benchmarks, then tells each of your app's model slots exactly which model to use — and alerts you when a better deal ships.">
+    <meta property="og:title" content="Modelfit — the right LLM for every job">
+    <meta property="og:description" content="Live price × benchmark intelligence for 300+ models. Pick, tune and route with one API.">
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="preload" href="/assets/fonts/inter-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/assets/brand.css">
+    <link rel="stylesheet" href="/assets/site.css">
+    <script src="/assets/theme.js"></script>
+</head>
+<body>
+<header class="site-nav" id="siteNav">
+    <div class="wrap">
+        <a class="brand" href="/" aria-label="Modelfit home"><span class="brand-mark"><svg viewBox="0 0 24 24"><path d="M4 18h4v-4h4v-4h3" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="18" cy="6.5" r="2.4" fill="#fff"/></svg></span><span class="brand-word">model<b>fit</b></span></a>
+        <nav class="nav-links"><a href="#features">Product</a><a href="#how">How it works</a><a href="/pricing">Pricing</a><a href="/docs">API</a><a href="/app">Live matrix</a></nav>
+        <div class="nav-right">
+            <button class="btn btn-ghost btn-icon" data-theme-toggle aria-label="Toggle theme"><svg class="i icon-sun"><use href="/assets/icons.svg#sun"/></svg><svg class="i icon-moon"><use href="/assets/icons.svg#moon"/></svg></button>
+            <a class="btn btn-ghost hide-sm" href="/login">Sign in</a>
+            <a class="btn btn-primary" href="/signup">Start free</a>
+        </div>
+    </div>
+</header>
+
+<main>
+    <section class="hero">
+        <div class="wrap hero-grid">
+            <div>
+                <span class="pill"><span class="dot ok"></span>Live market data · refreshed every 30 minutes</span>
+                <h1>The right model for <span class="grad-text">every job</span>. At the right price.</h1>
+                <p class="lead">Modelfit joins live prices from every major provider with two dozen independent benchmarks, then tells each model slot in your product exactly which LLM to use — and pings you the moment a better deal ships.</p>
+                <div class="hero-cta">
+                    <a class="btn btn-grad btn-lg" href="/signup">Start free <svg class="i"><use href="/assets/icons.svg#arrow-right"/></svg></a>
+                    <a class="btn btn-lg" href="/app">Explore the live matrix</a>
+                </div>
+                <div class="hero-stats">
+                    <div><b data-stat="models">300+</b><span>models priced</span></div>
+                    <div><b data-stat="benchmarks">25</b><span>benchmarks scored</span></div>
+                    <div><b data-stat="sources">5</b><span>open data sources</span></div>
+                </div>
+            </div>
+            <div class="card picks-panel" aria-live="polite">
+                <div class="pp-head"><b>Today's top picks</b><span class="pill muted" id="ppUpdated">loading…</span></div>
+                <div id="ppRows">
+                    <div class="pp-row"><span class="pp-alias">Daily</span><div><div class="pp-model skeleton">Loading model name</div><div class="fitbar"><b style="width:60%"></b></div></div><div class="pp-fit skeleton">00.0</div></div>
+                    <div class="pp-row"><span class="pp-alias">Coding</span><div><div class="pp-model skeleton">Loading model name</div><div class="fitbar"><b style="width:80%"></b></div></div><div class="pp-fit skeleton">00.0</div></div>
+                    <div class="pp-row"><span class="pp-alias">Thinking</span><div><div class="pp-model skeleton">Loading model name</div><div class="fitbar"><b style="width:70%"></b></div></div><div class="pp-fit skeleton">00.0</div></div>
+                    <div class="pp-row"><span class="pp-alias">Cheap</span><div><div class="pp-model skeleton">Loading model name</div><div class="fitbar"><b style="width:50%"></b></div></div><div class="pp-fit skeleton">00.0</div></div>
+                </div>
+                <div class="pp-foot"><span>Fit 0–100 · lowest live price</span><a href="/app">See all picks →</a></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="sources wrap">
+        <p>Built on open, cited data from</p>
+        <ul><li>OpenRouter</li><li>Artificial Analysis</li><li>Epoch AI</li><li>LMArena</li><li>LiteLLM</li><li>Nous Portal</li></ul>
+    </section>
+
+    <section class="section" id="features">
+        <div class="wrap">
+            <div class="section-head">
+                <span class="eyebrow">Product</span>
+                <h2>Stop guessing which model to ship</h2>
+                <p>New models land weekly and prices move daily. Modelfit keeps the whole market scored, so every slot in your product runs on the best model its budget can buy.</p>
+            </div>
+            <div class="features">
+                <div class="card feature"><div class="ficon"><svg class="i"><use href="/assets/icons.svg#chart"/></svg></div><h3>Cost × capability matrix</h3><p>Every purchasable model on one chart, with the efficiency frontier drawn for you. Filter by lab, age or use case in a click.</p></div>
+                <div class="card feature"><div class="ficon"><svg class="i"><use href="/assets/icons.svg#target"/></svg></div><h3>Picks per alias</h3><p>Define slots like <i>Daily</i>, <i>Coding</i> or <i>Cheap</i> with a cost cap and requirements. Get the top three fits for each, always current.</p></div>
+                <div class="card feature"><div class="ficon"><svg class="i"><use href="/assets/icons.svg#sliders"/></svg></div><h3>Tune what “best” means</h3><p>Weight coding, agentic, reasoning and chat — down to individual benchmarks — and watch the ranking update live.</p></div>
+                <div class="card feature"><div class="ficon"><svg class="i"><use href="/assets/icons.svg#zap"/></svg></div><h3>API &amp; webhooks</h3><p>Your router reads <code>/v1/recommendations</code>. A signed webhook fires the moment a better model takes the #1 spot.</p></div>
+                <div class="card feature"><div class="ficon"><svg class="i"><use href="/assets/icons.svg#shield"/></svg></div><h3>Honest by design</h3><p>No fuzzy name matching, no zeros for missing benchmarks, thin coverage flagged. Every score explains its own arithmetic.</p></div>
+                <div class="card feature"><div class="ficon"><svg class="i"><use href="/assets/icons.svg#users"/></svg></div><h3>Built for teams</h3><p>One shared workspace for model policy: the same aliases, weights and caps for every engineer and every service.</p></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" id="how" style="padding-top:0">
+        <div class="wrap">
+            <div class="section-head">
+                <span class="eyebrow">How it works</span>
+                <h2>From market noise to a routing decision</h2>
+            </div>
+            <div class="steps-row">
+                <div class="card step"><h3>We collect the market</h3><p>Prices from labs, OpenRouter endpoints and Nous Portal; benchmarks from Artificial Analysis, Epoch AI and LMArena. Unhealthy and 4-bit endpoints are excluded.</p></div>
+                <div class="card step"><h3>You describe your slots</h3><p>Each alias has a budget, hard requirements (tools, reasoning, context) and weights for what matters. Start from presets in seconds.</p></div>
+                <div class="card step"><h3>Your stack follows the best fit</h3><p>Read picks over the API, export them, or get a webhook when they change. Your router never runs on yesterday's model.</p></div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" style="padding-top:0">
+        <div class="wrap split">
+            <div>
+                <span class="eyebrow">Developer API</span>
+                <h2>One call. The best model for each slot.</h2>
+                <p>Point your gateway, router or agent framework at Modelfit and let it resolve aliases to concrete models — with the cheapest channel to buy them from.</p>
+                <ul class="ticks">
+                    <li><svg class="i"><use href="/assets/icons.svg#check"/></svg>Stable JSON with fit, price, provider and freshness</li>
+                    <li><svg class="i"><use href="/assets/icons.svg#check"/></svg>HMAC-signed webhooks on every #1 change</li>
+                    <li><svg class="i"><use href="/assets/icons.svg#check"/></svg>Works with OpenRouter-style model ids out of the box</li>
+                </ul>
+                <p style="margin-top:22px"><a class="btn" href="/docs">Read the API docs <svg class="i"><use href="/assets/icons.svg#arrow-right"/></svg></a></p>
+            </div>
+            <div class="code">
+                <div class="code-head"><i></i><i></i><i></i><span>GET /v1/recommendations/Coding</span></div>
+<pre><span class="c">$</span> curl https://modelfit.ai/v1/recommendations/Coding \
+    -H <span class="s">"Authorization: Bearer mf_live_…"</span>
+
+{
+  <span class="k">"alias"</span>: <span class="s">"Coding"</span>,
+  <span class="k">"cap"</span>: <span class="n">null</span>, <span class="k">"require"</span>: [<span class="s">"tools"</span>],
+  <span class="k">"picks"</span>: [{
+    <span class="k">"rank"</span>: <span class="n">1</span>,
+    <span class="k">"model"</span>: <span class="s" id="apiModel">"anthropic/claude-opus-5.5"</span>,
+    <span class="k">"fit"</span>: <span class="n" id="apiFit">95.4</span>,
+    <span class="k">"cost"</span>: { <span class="k">"blended"</span>: <span class="n" id="apiCost">8.0</span>, <span class="k">"provider"</span>: <span class="s" id="apiProv">"Anthropic"</span> }
+  }, …]
+}</pre>
+            </div>
+        </div>
+    </section>
+
+    <section class="section" style="padding-top:0" id="pricing">
+        <div class="wrap">
+            <div class="section-head">
+                <span class="eyebrow">Pricing</span>
+                <h2>Free to start. Pay when it routes real traffic.</h2>
+                <p>Everyone gets the live matrix and picks. Upgrade for custom weights, webhooks and higher API limits.</p>
+            </div>
+            <div class="plans" id="plans" data-interval="month"></div>
+            <p style="text-align:center;margin-top:22px"><a href="/pricing">Compare every feature →</a></p>
+        </div>
+    </section>
+
+    <section class="section" style="padding-top:0">
+        <div class="wrap">
+            <div class="section-head"><h2>Questions</h2></div>
+            <div class="faq">
+                <details class="card"><summary>Where does the data come from?</summary><p>Prices come from each lab's own endpoint, every provider endpoint on OpenRouter, Nous Portal and LiteLLM's price table. Benchmarks come from Artificial Analysis (via OpenRouter), the Epoch AI Benchmarking Hub and LMArena. All sources are cited and refreshed on their own schedules.</p></details>
+                <details class="card"><summary>How is “fit” calculated?</summary><p>Each benchmark is rescaled to 0–100 against today's purchasable models, averaged into four use-case scores, then weighted per alias. A missing benchmark is never counted as zero, and the app shows the full arithmetic for every number.</p></details>
+                <details class="card"><summary>Is per-token price the whole story?</summary><p>No — reasoning models spend more output tokens, so treat picks as a shortlist and check real task cost. Modelfit flags reasoning support and lets you switch the cost basis to input-only or output-only.</p></details>
+                <details class="card"><summary>Can I self-host?</summary><p>Yes. The same codebase runs as a single-user, self-hosted instance with every feature enabled — Python standard library only, no API keys required.</p></details>
+            </div>
+        </div>
+    </section>
+
+    <section class="wrap">
+        <div class="cta-band">
+            <h2>Ship on the frontier, not on habit.</h2>
+            <p>Set up your aliases in two minutes. No credit card required.</p>
+            <a class="btn btn-grad btn-lg" href="/signup">Create your free workspace <svg class="i"><use href="/assets/icons.svg#arrow-right"/></svg></a>
+        </div>
+    </section>
+</main>
+
+<footer class="site-footer">
+    <div class="wrap">
+        <div>
+            <a class="brand" href="/"><span class="brand-mark"><svg viewBox="0 0 24 24"><path d="M4 18h4v-4h4v-4h3" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="18" cy="6.5" r="2.4" fill="#fff"/></svg></span><span class="brand-word">model<b>fit</b></span></a>
+            <p class="fine">Benchmark data: Artificial Analysis (via OpenRouter), Epoch AI (CC-BY 4.0), LMArena (CC-BY 4.0). Prices: OpenRouter, Nous Portal, LiteLLM.</p>
+        </div>
+        <div><h4>Product</h4><ul><li><a href="/app">Live matrix</a></li><li><a href="/pricing">Pricing</a></li><li><a href="/docs">API</a></li></ul></div>
+        <div><h4>Account</h4><ul><li><a href="/signup">Start free</a></li><li><a href="/login">Sign in</a></li></ul></div>
+        <div><h4>Developers</h4><ul><li><a href="/docs#webhooks">Webhooks</a></li><li><a href="/docs#limits">Rate limits</a></li></ul></div>
+    </div>
+</footer>
+<script src="/assets/site.js"></script>
+</body>
+</html>

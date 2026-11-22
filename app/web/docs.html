@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>API reference — Modelfit</title>
+    <meta name="description" content="Modelfit API: resolve aliases to the best LLM over HTTP, with signed webhooks.">
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="preload" href="/assets/fonts/inter-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/assets/brand.css">
+    <link rel="stylesheet" href="/assets/site.css">
+    <script src="/assets/theme.js"></script>
+</head>
+<body>
+<header class="site-nav" id="siteNav">
+    <div class="wrap">
+        <a class="brand" href="/" aria-label="Modelfit home"><span class="brand-mark"><svg viewBox="0 0 24 24"><path d="M4 18h4v-4h4v-4h3" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="18" cy="6.5" r="2.4" fill="#fff"/></svg></span><span class="brand-word">model<b>fit</b></span></a>
+        <nav class="nav-links"><a href="/#features">Product</a><a href="/#how">How it works</a><a href="/pricing">Pricing</a><a href="/docs">API</a><a href="/app">Live matrix</a></nav>
+        <div class="nav-right">
+            <button class="btn btn-ghost btn-icon" data-theme-toggle aria-label="Toggle theme"><svg class="i icon-sun"><use href="/assets/icons.svg#sun"/></svg><svg class="i icon-moon"><use href="/assets/icons.svg#moon"/></svg></button>
+            <a class="btn btn-ghost hide-sm" href="/login">Sign in</a>
+            <a class="btn btn-primary" href="/signup">Start free</a>
+        </div>
+    </div>
+</header>
+<div class="wrap docs">
+    <nav aria-label="API sections"><a href="#auth">Authentication</a><a href="#recs">Recommendations</a><a href="#alias">One alias</a><a href="#models">Models</a><a href="#webhooks">Webhooks</a><a href="#limits">Rate limits</a><a href="#errors">Errors</a></nav>
+    <article>
+        <span class="eyebrow">API reference · v1</span>
+        <h1>Modelfit API</h1>
+        <p>Resolve your aliases to concrete models from your router, gateway or agent framework. Responses are JSON; model ids are OpenRouter-style (<code>vendor/model</code>).</p>
+
+        <h2 id="auth">Authentication</h2>
+        <p>Create a key under <b>Settings → API keys</b> in the app and send it as a bearer token. Keys belong to a workspace and are shown once; revoke them any time.</p>
+        <div class="code"><div class="code-head"><i></i><i></i><i></i><span>shell</span></div><pre>curl https://modelfit.ai/v1/recommendations \
+  -H <span class="s">"Authorization: Bearer mf_live_…"</span></pre></div>
+
+        <h2 id="recs">Recommendations for every alias</h2>
+        <div class="endpoint"><span class="verb">GET</span>/v1/recommendations</div>
+        <p>The top three fits for every alias in the workspace, under its cost cap and requirements, using its weights. <code>picks[0]</code> is the recommendation.</p>
+        <div class="code"><div class="code-head"><i></i><i></i><i></i><span>200 OK</span></div><pre>{
+  <span class="k">"generated_at"</span>: <span class="s">"2026-11-22T16:29:12+00:00"</span>,
+  <span class="k">"cost_basis"</span>: { <span class="k">"input"</span>: <span class="n">3</span>, <span class="k">"output"</span>: <span class="n">1</span> },
+  <span class="k">"data_as_of"</span>: { <span class="k">"openrouter"</span>: <span class="s">"…"</span>, <span class="k">"epoch"</span>: <span class="s">"…"</span> },
+  <span class="k">"aliases"</span>: {
+    <span class="k">"Daily"</span>: {
+      <span class="k">"cap"</span>: <span class="n">0.5</span>, <span class="k">"require"</span>: [], <span class="k">"min_context"</span>: <span class="n">null</span>,
+      <span class="k">"custom_weights"</span>: <span class="n">false</span>, <span class="k">"candidates"</span>: <span class="n">119</span>,
+      <span class="k">"picks"</span>: [{ <span class="k">"rank"</span>: <span class="n">1</span>, <span class="k">"model"</span>: <span class="s">"deepseek/deepseek-v4.1-flash-1017"</span>, <span class="k">"fit"</span>: <span class="n">70.8</span>,
+                  <span class="k">"cost"</span>: { <span class="k">"blended"</span>: <span class="n">0.113</span>, <span class="k">"input"</span>: <span class="n">0.07</span>, <span class="k">"output"</span>: <span class="n">0.24</span>, <span class="k">"channel"</span>: <span class="s">"openrouter"</span>, <span class="k">"provider"</span>: <span class="s">"…"</span> } }, …]
+    }
+  }
+}</pre></div>
+        <table><tr><th>Field</th><th>Meaning</th></tr>
+            <tr><td><code>fit</code></td><td>0–100: weighted average of the use-case scores with the alias's weights.</td></tr>
+            <tr><td><code>cost.blended</code></td><td>$ per million tokens at the workspace cost basis (default 3 input : 1 output), cheapest channel.</td></tr>
+            <tr><td><code>cost.channel</code></td><td><code>primary</code> (the lab itself), <code>openrouter</code> or <code>nous</code>.</td></tr>
+            <tr><td><code>current</code></td><td>When you set the model an alias uses today: its rank and up to three cheaper-or-equal, better options.</td></tr></table>
+
+        <h2 id="alias">One alias</h2>
+        <div class="endpoint"><span class="verb">GET</span>/v1/recommendations/{alias}</div>
+        <p>The same entry for a single alias, plus <code>alias</code> and <code>generated_at</code>. 404 if the workspace has no such alias.</p>
+
+        <h2 id="models">Models</h2>
+        <div class="endpoint"><span class="verb">GET</span>/v1/models?q=flash&amp;limit=50</div>
+        <p>The market snapshot: every purchasable model with its lowest price and use-case scores (coding, agentic, reasoning, chat). <code>q</code> filters by id or name; <code>limit</code> is 1–500.</p>
+
+        <h2 id="webhooks">Webhooks <span class="pill" style="vertical-align:3px">Pro</span></h2>
+        <p>Set a URL under <b>Settings → Webhook</b>. When any alias's #1 pick changes, Modelfit POSTs:</p>
+        <div class="code"><div class="code-head"><i></i><i></i><i></i><span>POST your-url</span></div><pre>{ <span class="k">"event"</span>: <span class="s">"picks.changed"</span>, <span class="k">"workspace"</span>: <span class="s">"ws_…"</span>, <span class="k">"generated_at"</span>: <span class="s">"…"</span>,
+  <span class="k">"changed"</span>: { <span class="k">"Daily"</span>: { <span class="k">"from"</span>: <span class="s">"z-ai/glm-5.3-flash"</span>, <span class="k">"to"</span>: <span class="s">"deepseek/deepseek-v4.1-flash-1017"</span> } } }</pre></div>
+        <p>Verify it: <code>X-Modelfit-Signature</code> is <code>v1=</code> + hex HMAC-SHA256 of <code>"{X-Modelfit-Timestamp}.{raw body}"</code> with your webhook secret. Reject timestamps older than five minutes.</p>
+        <div class="code"><div class="code-head"><i></i><i></i><i></i><span>python</span></div><pre><span class="k">import</span> hmac, hashlib, time
+
+<span class="k">def</span> verify(secret, ts, body, header):
+    <span class="k">if</span> abs(time.time() - int(ts)) &gt; <span class="n">300</span>: <span class="k">return</span> <span class="n">False</span>
+    want = <span class="s">"v1="</span> + hmac.new(secret.encode(), f<span class="s">"{ts}."</span>.encode() + body, hashlib.sha256).hexdigest()
+    <span class="k">return</span> hmac.compare_digest(want, header)</pre></div>
+
+        <h2 id="limits">Rate limits</h2>
+        <table><tr><th>Plan</th><th>Requests / day</th><th>API keys</th></tr><tr><td>Free</td><td>200</td><td>1</td></tr><tr><td>Pro</td><td>10,000</td><td>5</td></tr><tr><td>Team</td><td>100,000</td><td>25</td></tr></table>
+        <p>Counted per workspace per UTC day, with short bursts smoothed to about 2 requests/second. Every response carries <code>X-RateLimit-Limit</code> and <code>X-RateLimit-Remaining</code>. Picks change at most every 30 minutes, so cache responses for a few minutes.</p>
+
+        <h2 id="errors">Errors</h2>
+        <table><tr><th>Status</th><th>When</th></tr>
+            <tr><td>401</td><td>Missing, invalid or revoked key.</td></tr>
+            <tr><td>402</td><td>The action needs a higher plan; the body names it in <code>upgrade</code>.</td></tr>
+            <tr><td>404</td><td>Unknown alias.</td></tr>
+            <tr><td>429</td><td>Daily limit reached or too many requests per minute.</td></tr>
+            <tr><td>503</td><td>Market data is still loading (a fresh install).</td></tr></table>
+    </article>
+</div>
+<footer class="site-footer">
+    <div class="wrap">
+        <div>
+            <a class="brand" href="/"><span class="brand-mark"><svg viewBox="0 0 24 24"><path d="M4 18h4v-4h4v-4h3" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="18" cy="6.5" r="2.4" fill="#fff"/></svg></span><span class="brand-word">model<b>fit</b></span></a>
+            <p class="fine">Benchmark data: Artificial Analysis (via OpenRouter), Epoch AI (CC-BY 4.0), LMArena (CC-BY 4.0). Prices: OpenRouter, Nous Portal, LiteLLM.</p>
+        </div>
+        <div><h4>Product</h4><ul><li><a href="/app">Live matrix</a></li><li><a href="/pricing">Pricing</a></li><li><a href="/docs">API</a></li></ul></div>
+        <div><h4>Account</h4><ul><li><a href="/signup">Start free</a></li><li><a href="/login">Sign in</a></li></ul></div>
+        <div><h4>Developers</h4><ul><li><a href="/docs#webhooks">Webhooks</a></li><li><a href="/docs#limits">Rate limits</a></li></ul></div>
+    </div>
+</footer>
+<script src="/assets/site.js"></script>
+</body>
+</html>

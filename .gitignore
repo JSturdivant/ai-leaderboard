@@ -2,5 +2,7 @@ __pycache__/
 *.pyc
 data/
 .DS_Store
+app/weights.json
 local/weights.json
 weights.json.moved-to-local
+var/

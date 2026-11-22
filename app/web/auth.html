@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Sign in — Modelfit</title>
+    <meta name="description" content="Sign in to Modelfit.">
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="preload" href="/assets/fonts/inter-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/assets/brand.css">
+    <link rel="stylesheet" href="/assets/site.css">
+    <script src="/assets/theme.js"></script>
+</head>
+<body>
+<div class="auth-page">
+    <aside class="auth-side">
+        <a class="brand" href="/"><span class="brand-mark"><svg viewBox="0 0 24 24"><path d="M4 18h4v-4h4v-4h3" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="18" cy="6.5" r="2.4" fill="#fff"/></svg></span><span class="brand-word">model<b>fit</b></span></a>
+        <div>
+            <blockquote>Every slot in your product, on the best model its budget can buy.</blockquote>
+            <ul>
+                <li><svg class="i"><use href="/assets/icons.svg#check"/></svg>Live prices from every major provider</li>
+                <li><svg class="i"><use href="/assets/icons.svg#check"/></svg>Two dozen benchmarks, honestly combined</li>
+                <li><svg class="i"><use href="/assets/icons.svg#check"/></svg>Top-3 picks per alias, over API and webhooks</li>
+            </ul>
+        </div>
+        <span style="font-size:.8rem;color:#6c748c">Benchmarks: Artificial Analysis · Epoch AI · LMArena</span>
+    </aside>
+    <main class="auth-main">
+        <div class="auth-card">
+            <h1 id="authTitle">Welcome back</h1>
+            <p class="sub" id="authSub"></p>
+            <form id="authForm" novalidate>
+                <div class="field" id="nameField" hidden><label for="name">Name</label><input type="text" id="name" autocomplete="name" placeholder="Ada Lovelace"></div>
+                <div class="field"><label for="email">Work email</label><input type="email" id="email" autocomplete="email" required placeholder="you@company.com"></div>
+                <div class="field"><label for="password">Password</label><input type="password" id="password" required minlength="8" placeholder="At least 8 characters"></div>
+                <div class="form-error" id="authError" hidden></div>
+                <button class="btn btn-primary btn-lg btn-block" id="authSubmit" type="submit">Sign in</button>
+            </form>
+            <p class="fine-print" id="termsNote" hidden>By creating an account you agree to the Terms and Privacy Policy.</p>
+            <p class="auth-alt" id="authAlt"></p>
+            <p class="auth-alt"><a href="/app">Browse the live matrix without an account →</a></p>
+        </div>
+    </main>
+</div>
+<script src="/assets/site.js"></script>
+</body>
+</html>
