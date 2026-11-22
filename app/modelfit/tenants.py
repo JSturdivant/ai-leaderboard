@@ -6,7 +6,8 @@ Stored settings (ws_settings.data, JSON):
    "weights":        {"Coding": {"cats": {...}, "metrics": {...}}},   # sparse overlays (see weights.py)
    "caps":           {"Cheap": 0.2},                                  # sparse overlays, null = no cap
    "current_models": {"Daily": "z-ai/glm-5.3-flash"},                 # what the workspace runs today
-   "webhook":        {"url": "...", "secret": "...", "legacy_token": false}}
+   "webhook":        {"url": "...", "secret": "...", "legacy_token": false},
+   "routes":         {"Coding": {"mode": "auto", "pinned": null, "min_gain": 1.0, "fallbacks": 2}}}   # see router.py
 
 Every change bumps `version` (the UI polls it so teammates and other tabs see edits) and re-scores the
 workspace against the current market snapshot. Every new snapshot re-scores every workspace.
@@ -24,7 +25,7 @@ import time
 import urllib.request
 from urllib.parse import urlparse
 
-from . import LATEST, db, plans, recommend, settings
+from . import LATEST, db, plans, recommend, router, settings
 from . import picks as picks_mod
 from . import weights as W
 from .store import load_config
@@ -66,7 +67,7 @@ def presets():
 
 
 def _blank():
-    return {"alias_defs": {}, "weights": {}, "caps": {}, "current_models": {}, "webhook": {}}
+    return {"alias_defs": {}, "weights": {}, "caps": {}, "current_models": {}, "webhook": {}, "routes": {}}
 
 
 def init_workspace(wsid, starter=True, data=None):
@@ -109,7 +110,8 @@ def clean(data):
     """Stored settings with anything that no longer validates dropped (aliases, categories, benchmarks)."""
     ctx = _ctx(data)
     return {**data, "weights": W.parse(data.get("weights"), ctx), "caps": W.parse_caps(data.get("caps"), ctx),
-            "current_models": {a: m for a, m in (data.get("current_models") or {}).items() if a in data["alias_defs"] and m}}
+            "current_models": {a: m for a, m in (data.get("current_models") or {}).items() if a in data["alias_defs"] and m},
+            "routes": {a: r for a, r in (data.get("routes") or {}).items() if a in data["alias_defs"] and isinstance(r, dict)}}
 
 
 def effective_defs(data):
@@ -123,7 +125,7 @@ def public_settings(ws, data, ver):
     data = clean(data)
     hook = data.get("webhook") or {}
     return {"alias_defs": data["alias_defs"], "weights": data["weights"], "caps": data["caps"],
-            "current_models": data["current_models"], "version": ver,
+            "current_models": data["current_models"], "routes": data["routes"], "version": ver,
             "webhook": {"url": hook.get("url") or "", "secret_hint": (hook.get("secret") or "")[-4:], "has_secret": bool(hook.get("secret"))}}
 
 
@@ -167,7 +169,7 @@ def remove_alias(ws, name):
     data, _, _ = get_settings(ws["id"])
     if name not in data["alias_defs"]:
         raise KeyError(name)
-    for k in ("alias_defs", "weights", "caps", "current_models"):
+    for k in ("alias_defs", "weights", "caps", "current_models", "routes"):
         data[k].pop(name, None)
     ver = _put(ws["id"], data)
     recompute(ws)
@@ -185,6 +187,18 @@ def set_current(ws, alias, model_id):
         data["current_models"].pop(alias, None)
     ver = _put(ws["id"], data)
     recompute(ws)
+    return data, ver
+
+
+def set_route(ws, alias, raw):
+    """Route controls for one alias (mode auto/pinned, switch threshold, fallback count)."""
+    data, _, _ = get_settings(ws["id"])
+    if alias not in data["alias_defs"]:
+        raise KeyError(alias)
+    data.setdefault("routes", {})[alias] = router.parse_config(raw, ws)
+    ver = _put(ws["id"], data)
+    recompute(ws)
+    db.event("route.configured", ws["id"], alias=alias, mode=data["routes"][alias]["mode"])
     return data, ver
 
 
@@ -219,7 +233,9 @@ def recompute(ws, snap=None, notify=True):
     data = clean(data)
     defs = effective_defs(data)
     custom = {n for n in data["weights"]}
-    recs = recommend.build(snap, picks_mod.score_workspace(snap, defs, data["current_models"]), custom)
+    alias_picks = picks_mod.score_workspace(snap, defs, data["current_models"])
+    router.update(ws, alias_picks, data, snap, notify)  # routes move with hysteresis, independently of the ranking
+    recs = recommend.build(snap, alias_picks, custom)
     prev = recommendations(ws["id"])
     same = prev is not None and {k: v for k, v in prev.items() if k != "generated_at"} == {k: v for k, v in recs.items() if k != "generated_at"}
     if same:
@@ -240,7 +256,7 @@ def recompute(ws, snap=None, notify=True):
 def history(ws, limit=100):
     days = plans.limit(ws, "history_days")
     since = time.time() - days * 86400 if days else 0
-    return db.all_("SELECT alias, from_model, to_model, at FROM pick_history WHERE workspace_id=? AND at>=? "
+    return db.all_("SELECT alias, from_model, to_model, at, kind FROM pick_history WHERE workspace_id=? AND at>=? "
                    "ORDER BY at DESC LIMIT ?", ws["id"], since, limit)
 
 

@@ -18,6 +18,7 @@
         <span class="ws-name" id="wsName" hidden></span>
         <nav class="tabs-nav" id="viewNav" aria-label="Sections">
             <a href="#picks" data-nav="picks"><svg class="i"><use href="/assets/icons.svg#target"/></svg><span>Picks</span></a>
+            <a href="#routing" data-nav="routing"><svg class="i"><use href="/assets/icons.svg#route"/></svg><span>Routing</span></a>
             <a href="#matrix" data-nav="matrix"><svg class="i"><use href="/assets/icons.svg#chart"/></svg><span>Matrix</span></a>
             <a href="#leaderboard" data-nav="leaderboard"><svg class="i"><use href="/assets/icons.svg#table"/></svg><span>Leaderboard</span></a>
             <a href="#methodology" data-nav="methodology"><svg class="i"><use href="/assets/icons.svg#book"/></svg><span>Methodology</span></a>
@@ -74,6 +75,17 @@
             </div>
             <div class="alias-grid" id="aliasGrid"></div>
             <datalist id="modelList"></datalist>
+        </section>
+
+        <!-- Routing -->
+        <section class="view" data-section="routing">
+            <div class="view-head">
+                <div>
+                    <h1>Routing <span class="pill">OpenAI-compatible</span></h1>
+                    <p>Point any agent or OpenAI SDK at Modelfit and use an alias as the model name. Each alias resolves to a <b>stable route</b> that only switches when a better model is clearly better, with automatic failover down its fallbacks.</p>
+                </div>
+            </div>
+            <div id="routingBody"><div class="spinner" style="margin:60px auto"></div></div>
         </section>
 
         <!-- Matrix -->

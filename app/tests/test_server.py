@@ -112,7 +112,7 @@ class SelfhostTests(ServerCase):
         self.assertEqual((st, out["alias"]), (200, "Cheap"))
         self.assertEqual(r.getheader("X-RateLimit-Limit"), "unlimited")
         self.assertEqual(self.c.call("GET", "/v1/recommendations/Nope")[0], 404)
-        st, models, _ = self.c.call("GET", "/v1/models?q=alpha&limit=5")
+        st, models, _ = self.c.call("GET", "/v1/market?q=alpha&limit=5")
         self.assertTrue(all("alpha" in m["id"] for m in models["models"]))
 
     def test_accounts_and_billing_are_cloud_only(self):

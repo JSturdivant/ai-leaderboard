@@ -31,6 +31,36 @@ The single-user version rebuilt everything (fetch → join → score → picks) 
   new snapshot. The build uses the same function for the preset aliases, and `app.js` mirrors it exactly
   (same `fsum` and Python-style rounding), so the browser preview, the API and the build always agree.
 
+## Model routing
+
+Agents rely on a *route*, not a ranking, so routing is a separate, deliberately sticky layer on top of the picks
+(`router.py`, state in `ws_routes`):
+
+```
+picks (ranked, re-scored per workspace) ──► router.update ──► route per alias: model + ordered fallbacks + reason
+                                              │  auto: switch only when the top pick beats the route by min_gain fit
+                                              │        (or at once if the route is no longer eligible/purchasable)
+                                              │  pinned: one model, still scored
+                                              └► pick_history(kind='route'), webhook route.changed
+
+POST /v1/chat/completions {model: "Coding"} ──► serving_chain(route, request needs) ──► upstream (OpenRouter, BYOK)
+        needs = tool calls? estimated context?          route → fallbacks → spares     retry next on 404/408/429/5xx/timeouts
+                                                                                        stream passthrough, route_log row
+GET /v1/routes/{alias}?tools=1&context=N ──► the same chain, for customers who run their own gateway
+```
+
+* **Bring your own key.** The gateway forwards with the workspace's OpenRouter key (sealed at rest with
+  `secretbox.py`: HMAC-SHA256 CTR stream + encrypt-then-MAC, keys derived from `MODELFIT_SECRET_KEY`), so
+  customers pay providers directly and Modelfit carries no token cost or credit risk. A managed-billing option
+  (we buy tokens, resell with a margin) is a later decision; it would need prepaid credits and fraud controls.
+* **Why OpenRouter as the upstream:** one OpenAI-compatible API reaching almost every model id the snapshot uses.
+  Models sold only elsewhere (e.g. Nous-only) are skipped by the gateway (flagged in the UI) but still returned by
+  `/v1/routes`. Direct provider upstreams (OpenAI, Anthropic, Google) are a natural extension of `PROVIDERS`.
+* **Hot path cost:** one SQLite read of the route row + the snapshot already in memory; no scoring per request.
+* **Scaling:** the gateway is I/O-bound (`ThreadingHTTPServer`, one thread per request, 180 s timeout). Past a few
+  hundred concurrent streams, move it to an async server (or a separate gateway service reading routes from
+  Postgres/Redis) and log requests asynchronously.
+
 ## Modules (`app/modelfit/`)
 
 | Module | Responsibility |
@@ -44,6 +74,8 @@ The single-user version rebuilt everything (fetch → join → score → picks) 
 | `auth.py` | scrypt passwords, HMAC'd session tokens and API keys |
 | `plans.py` | **the** source of truth for plans, limits and feature flags |
 | `tenants.py` | workspace settings, re-scoring, pick history, signed webhooks (SSRF-guarded), the self-host workspace |
+| `router.py` | routes per alias (hysteresis, pinning, fallbacks), request filtering, BYOK provider keys, gateway log |
+| `secretbox.py` | authenticated encryption for stored provider keys |
 | `billing.py` | Stripe Checkout, customer portal, webhook verification and idempotent plan sync |
 | `ratelimit.py` | in-process token buckets (sign-in, API bursts, writes) |
 
@@ -56,7 +88,10 @@ users ─┬─< members >─┬─ workspaces ── ws_settings (alias_defs, w
        │             │              ├─ ws_recommendations (latest picks JSON)
        └─< sessions ─┘              ├─< pick_history (alias, from, to, at)
                                     ├─< api_keys (hashed, prefix, last_used)
-                                    └─< usage (day, metric, count)
+                                    ├─< usage (day, metric, count)
+                                    ├── ws_routes (route per alias JSON; version)
+                                    ├─< route_log (gateway requests: model, status, attempts, tokens, cost)
+                                    └─< provider_keys (sealed BYOK credentials)
 events (audit + product analytics)   billing_events (Stripe idempotency)
 ```
 

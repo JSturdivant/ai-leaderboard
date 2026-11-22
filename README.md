@@ -1,14 +1,18 @@
 # Modelfit
 
 **The right LLM for every job, at the right price.** Modelfit joins live prices from every major provider with
-two dozen independent benchmarks, then tells each model slot ("alias") in your product which model to use, over
-an API and signed webhooks, and keeps that answer current as the market moves.
+two dozen independent benchmarks, picks the best model for each model slot ("alias") in your product, and routes
+your agents' requests to it through one OpenAI-compatible endpoint, keeping the answer current as the market moves.
 
+* **Routing:** point any OpenAI SDK at `/v1` and use an alias as `model`. Each alias has a stable route (switches
+  only when a model is clearly better, or pin one), ordered fallbacks that respect tool calls and context length,
+  and a request log. Bring your own OpenRouter key: provider prices, no markup. Or resolve routes yourself with
+  `GET /v1/routes/{alias}`.
 * **Picks:** for each alias (budget + requirements + what matters), the top three fits, always current.
 * **Matrix:** every purchasable model on one cost × capability chart with the efficiency frontier.
 * **Leaderboard:** $ per 100 points of capability, per use case.
 * **Explainable:** every fit shows its arithmetic, benchmark by benchmark.
-* **API & webhooks:** `GET /v1/recommendations` for your router; an HMAC-signed POST when a #1 pick changes.
+* **API & webhooks:** `GET /v1/recommendations`; HMAC-signed `route.changed` / `picks.changed` events.
 
 Python 3.9+ standard library only: no `pip install`, no Node, no API keys for the data sources.
 
@@ -52,8 +56,9 @@ Public API reference: `/docs` on any running instance.
 
 ## Plans
 
-Free (4 aliases, 200 API calls/day, preview tuning) · Pro $19/mo (25 aliases, custom weights, webhooks, 10k
-calls/day, CSV) · Team $79/mo (shared workspace, 5 seats, 100k calls/day). Limits live in
+Free (4 aliases, 100 gateway requests/day, 1 fallback, preview tuning) · Pro $19/mo (25 aliases, 25k gateway
+requests/day, pinning and switch thresholds, 3 fallbacks, custom weights, webhooks, CSV) · Team $79/mo (shared
+workspace, 5 seats, 250k gateway requests/day, 5 fallbacks). Limits live in
 `app/modelfit/plans.py`. Rationale and funnel: [docs/GTM.md](docs/GTM.md).
 
 ## Upgrading from the single-user leaderboard
@@ -62,6 +67,7 @@ calls/day, CSV) · Team $79/mo (shared workspace, 5 seats, 100k calls/day). Limi
 * Your tuning is imported automatically on first run: a `weights.json` in `app/`, `local/` or the repository root is
   read into the self-hosted workspace (stored in `app/var/modelfit.db`). Recommendations are now served at
   `http://localhost:8787/v1/recommendations` (no key needed locally) instead of being written into `weights.json`.
+  Self-hosted agents can route through `http://localhost:8787/v1/chat/completions` with `OPENROUTER_API_KEY` set.
 * The webhook token is no longer stored in `config.json`. Set `MODELFIT_WEBHOOK_URL` and `MODELFIT_WEBHOOK_SECRET`
   (your old token) before the first run, or set the URL under *Settings → Webhook*. Self-hosted deliveries still
   send `X-Sync-Token` when seeded from a token, plus the new `X-Modelfit-Signature`.

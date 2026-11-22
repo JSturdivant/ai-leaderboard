@@ -69,6 +69,26 @@ MIGRATIONS = [
     CREATE INDEX events_ws ON events(workspace_id, at);
     CREATE TABLE billing_events (id TEXT PRIMARY KEY, type TEXT NOT NULL, received_at REAL NOT NULL);
     """,
+    # 2: model routing: the live route per alias, history kinds, gateway request log, provider credentials
+    """
+    ALTER TABLE pick_history ADD COLUMN kind TEXT NOT NULL DEFAULT 'pick';
+    CREATE TABLE ws_routes (
+        workspace_id TEXT PRIMARY KEY REFERENCES workspaces(id) ON DELETE CASCADE,
+        data TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, updated_at REAL NOT NULL
+    );
+    CREATE TABLE route_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+        alias TEXT, model TEXT, status INTEGER, attempts INTEGER NOT NULL DEFAULT 1, latency_ms INTEGER,
+        prompt_tokens INTEGER, completion_tokens INTEGER, cost_usd REAL, stream INTEGER NOT NULL DEFAULT 0,
+        error TEXT, at REAL NOT NULL
+    );
+    CREATE INDEX route_log_ws ON route_log(workspace_id, at);
+    CREATE TABLE provider_keys (
+        workspace_id TEXT NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE, provider TEXT NOT NULL,
+        sealed TEXT NOT NULL, hint TEXT NOT NULL, created_at REAL NOT NULL,
+        PRIMARY KEY (workspace_id, provider)
+    );
+    """,
 ]
 
 _local = threading.local()

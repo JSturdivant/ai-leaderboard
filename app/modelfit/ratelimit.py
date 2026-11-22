@@ -28,4 +28,5 @@ class Buckets:
 
 AUTH = Buckets(rate_per_minute=10, burst=10)    # sign-in / sign-up attempts per IP
 API = Buckets(rate_per_minute=120, burst=60)    # /v1 calls per key (burst smoothing on top of the daily quota)
+GATEWAY = Buckets(rate_per_minute=600, burst=120)  # gateway calls per workspace
 WRITES = Buckets(rate_per_minute=600, burst=120)  # settings saves per workspace (slider drags are bursty)

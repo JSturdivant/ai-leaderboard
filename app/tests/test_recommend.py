@@ -104,14 +104,16 @@ class WorkspaceTests(unittest.TestCase):
         data["webhook"] = {"url": "https://hooks.example.com/x", "secret": "whsec_test"}
         tenants._put("ws_a", data)
         with mock.patch.object(tenants, "send_webhook") as send, mock.patch.object(tenants.threading, "Thread") as T:
-            T.side_effect = lambda target, args, daemon: mock.Mock(start=lambda: target(*args))
-            tenants.save_tuning(self.ws, {}, {"Cheap": 0})  # a $0 cap forces a different #1
+            T.side_effect = lambda target, args, daemon, kwargs=None: mock.Mock(start=lambda: target(*args, **(kwargs or {})))
+            tenants.save_tuning(self.ws, {}, {"Cheap": 0})  # a $0 cap forces a different #1 (and route)
         hist = tenants.history(self.ws)
-        self.assertEqual([h["alias"] for h in hist], ["Cheap"])
-        self.assertEqual(hist[0]["from_model"], "acme/alpha-1")
-        send.assert_called_once()
-        self.assertEqual(send.call_args[0][1], "ws_a")
-        self.assertEqual(send.call_args[0][2]["Cheap"][0], "acme/alpha-1")
+        self.assertEqual(sorted((h["alias"], h["kind"]) for h in hist), [("Cheap", "pick"), ("Cheap", "route")])
+        self.assertTrue(all(h["from_model"] == "acme/alpha-1" for h in hist))
+        self.assertEqual(send.call_count, 2)
+        events = sorted(c.kwargs.get("event", "picks.changed") for c in send.call_args_list)
+        self.assertEqual(events, ["picks.changed", "route.changed"])
+        for c in send.call_args_list:
+            self.assertEqual((c.args[1], c.args[2]["Cheap"][0]), ("ws_a", "acme/alpha-1"))
 
     def test_a_quiet_recompute_changes_nothing(self):
         tenants.recompute(self.ws)

@@ -24,10 +24,7 @@
                 <div style="min-width:0"><div class="pp-model" title="${esc(p.model)}">${esc(p.name)}</div><div class="pp-sub">${usd(p.cost)}/M · via ${esc(p.provider.replace(/ \(.*\)$/, ""))}</div><div class="fitbar"><b style="width:${p.fit}%"></b></div></div>
                 <div class="pp-fit"><b>${p.fit.toFixed(1)}</b><span>fit</span></div></div>`).join("");
             const coding = h.picks.find((p) => p.alias === "Coding");
-            if (coding && $("#apiModel")) {
-                $("#apiModel").textContent = `"${coding.model}"`; $("#apiFit").textContent = coding.fit;
-                $("#apiCost").textContent = coding.cost; $("#apiProv").textContent = `"${coding.provider.replace(/ \(.*\)$/, "")}"`;
-            }
+            if (coding && $("#apiModel")) $("#apiModel").textContent = `"${coding.model}"`;
         }).catch(() => { $("#ppUpdated").textContent = "offline"; });
     }
 
@@ -56,8 +53,8 @@
         if (!t || !PLANS) return;
         const keys = ["free", "pro", "team"], P = PLANS.plans;
         const fmt = (v) => (v === null ? "Unlimited" : typeof v === "number" ? v.toLocaleString() : v);
-        const limits = [["aliases", "Model aliases"], ["api_requests_per_day", "API requests / day"], ["api_keys", "API keys"], ["members", "Seats"], ["history_days", "Pick history (days)"]];
-        const rows = [`<tr><td>Live matrix, leaderboard &amp; methodology</td>${keys.map(() => `<td class="yes">${icon("check")}</td>`).join("")}</tr>`]
+        const limits = [["aliases", "Model aliases"], ["gateway_requests_per_day", "Gateway requests / day"], ["fallbacks", "Fallback models per alias"], ["api_requests_per_day", "Other API requests / day"], ["api_keys", "API keys"], ["members", "Seats"], ["history_days", "Pick history (days)"]];
+        const rows = [`<tr><td>OpenAI-compatible routing gateway &amp; stable routes</td>${keys.map(() => `<td class="yes">${icon("check")}</td>`).join("")}</tr>`, `<tr><td>Live matrix, leaderboard &amp; methodology</td>${keys.map(() => `<td class="yes">${icon("check")}</td>`).join("")}</tr>`]
             .concat(limits.map(([k, l]) => `<tr><td>${l}</td>${keys.map((p) => `<td>${fmt(P[p].limits[k])}</td>`).join("")}</tr>`))
             .concat(Object.entries(PLANS.features).map(([k, l]) => `<tr><td>${esc(l)}</td>${keys.map((p) => (P[p].features[k] ? `<td class="yes">${icon("check")}</td>` : '<td class="no">—</td>')).join("")}</tr>`));
         t.innerHTML = `<thead><tr><th></th>${keys.map((k) => `<th>${esc(P[k].label)}</th>`).join("")}</tr></thead><tbody>${rows.join("")}</tbody>`;

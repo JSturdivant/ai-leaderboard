@@ -11,6 +11,8 @@ STRIPE_SECRET_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_PRICE_PRO_MONTHLY, STRIPE_PRICE
 STRIPE_PRICE_TEAM_MONTHLY, STRIPE_PRICE_TEAM_YEARLY      billing (without them, cloud mode in development
                         switches plans instantly so the upgrade flow can be exercised locally)
 MODELFIT_WEBHOOK_URL, MODELFIT_WEBHOOK_SECRET            selfhost only: seed the workspace's pick-change webhook
+OPENROUTER_API_KEY      selfhost only: the gateway's upstream key when the workspace has not stored one
+MODELFIT_UPSTREAM_URL   the gateway's OpenAI-compatible upstream (default https://openrouter.ai/api/v1)
 """
 
 import os
@@ -35,6 +37,8 @@ class Settings:
     stripe_prices: dict = field(default_factory=dict)  # price id -> (plan, interval)
     webhook_url: str = ""
     webhook_secret: str = ""
+    openrouter_key: str = ""
+    upstream_url: str = "https://openrouter.ai/api/v1"
 
     @property
     def cloud(self):
@@ -77,6 +81,8 @@ def load(env=None):
         stripe_webhook_secret=e.get("STRIPE_WEBHOOK_SECRET") or "",
         webhook_url=e.get("MODELFIT_WEBHOOK_URL") or "",
         webhook_secret=e.get("MODELFIT_WEBHOOK_SECRET") or "",
+        openrouter_key=e.get("OPENROUTER_API_KEY") or "",
+        upstream_url=(e.get("MODELFIT_UPSTREAM_URL") or "https://openrouter.ai/api/v1").rstrip("/"),
     )
     for plan in ("pro", "team"):
         for interval in ("monthly", "yearly"):

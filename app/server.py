@@ -17,6 +17,8 @@ import re
 import socket
 import threading
 import time
+import urllib.error
+import urllib.request
 import webbrowser
 from http import HTTPStatus
 from http.cookies import SimpleCookie
@@ -24,12 +26,14 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from modelfit import DATA_DIR, LATEST, ROOT
-from modelfit import auth, billing, build, db, plans, ratelimit, settings, tenants
+from modelfit import auth, billing, build, db, plans, ratelimit, router, settings, tenants
 from modelfit.scheduler import Scheduler
 from modelfit.store import load_config, load_status
 
 WEB = ROOT / "web"
 MAX_BODY = 64 * 1024
+GATEWAY_BODY = 8 * 1024 * 1024   # chat requests carry whole conversations
+GATEWAY_TIMEOUT = 180
 CSRF_HEADER = "modelfit"
 mimetypes.add_type("application/javascript", ".js")
 mimetypes.add_type("font/woff2", ".woff2")
@@ -134,13 +138,13 @@ class Handler(SimpleHTTPRequestHandler):
             return self.headers["X-Forwarded-For"].split(",")[0].strip()
         return self.client_address[0]
 
-    def body(self):
+    def body(self, max_bytes=MAX_BODY):
         try:
             length = int(self.headers.get("Content-Length") or 0)
         except ValueError:
             length = -1
-        if length > MAX_BODY:
-            raise ApiError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "body must be at most 64 KB")
+        if length > max_bytes:
+            raise ApiError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, f"body must be at most {max_bytes // 1024} KB")
         if length <= 0:
             raise ApiError(HTTPStatus.BAD_REQUEST, "expected a JSON body")
         raw = self.rfile.read(length)
@@ -223,7 +227,9 @@ class Handler(SimpleHTTPRequestHandler):
                     continue
                 writes = method != "GET"
                 is_webhook = path == "/api/billing/webhook"
-                if writes and not is_webhook and (self.headers.get("X-Requested-With") != CSRF_HEADER or not self._origin_ok()):
+                # API calls (agents, SDKs) cannot send our CSRF header; a JSON body is preflight-protected instead
+                api_json = auth_ == "key" and (self.headers.get("Content-Type") or "").split(";")[0].strip() == "application/json"
+                if writes and not is_webhook and not api_json and (self.headers.get("X-Requested-With") != CSRF_HEADER or not self._origin_ok()):
                     raise ApiError(HTTPStatus.FORBIDDEN, "forbidden")
                 if auth_ == "key":
                     ctx = self.key_context()
@@ -632,8 +638,9 @@ def v1_rec(h, ctx, alias):
     return HTTPStatus.OK, {"alias": alias, "generated_at": recs["generated_at"], **entry}, hdrs
 
 
-@route("GET", "/v1/models", "key")
-def v1_models(h, ctx):
+@route("GET", "/v1/market", "key")
+def v1_market(h, ctx):
+    """The market snapshot: every purchasable model with its lowest price and use-case scores."""
     hdrs = metered(h, ctx)
     snap = tenants.snapshot()
     if not snap:
@@ -648,6 +655,228 @@ def v1_models(h, ctx):
             "reasoning": m["reasoning"], "cost": m["cost"]["lowest"], "scores": {c: s["s"] for c, s in m["scores"].items()}}
            for m in rows[:limit]]
     return HTTPStatus.OK, {"generated_at": snap["generated_at"], "count": len(rows), "models": out}, hdrs
+
+
+# ── routing (/v1/routes, and the OpenAI-compatible gateway) ─────────────────────────────
+def _snap_or_503():
+    snap = tenants.snapshot()
+    if not snap:
+        raise ApiError(HTTPStatus.SERVICE_UNAVAILABLE, "market data is still loading")
+    return snap
+
+
+def _ensure_routes(ws, snap):
+    routes, _ = router.load(ws["id"])
+    if not routes:
+        tenants.recompute(ws, snap)
+    return snap
+
+
+def _needs_from_query(q):
+    needs = {}
+    if q.get("tools") in ("1", "true", "yes"):
+        needs["tools"] = True
+    try:
+        if q.get("context"):
+            needs["context"] = max(0, int(q["context"]))
+    except ValueError:
+        raise ApiError(HTTPStatus.BAD_REQUEST, "context must be a token count") from None
+    return needs
+
+
+@route("GET", "/v1/models", "key")
+def v1_models(h, ctx):
+    """OpenAI-compatible model list: your aliases, each resolving to its live route (so SDKs can list them)."""
+    hdrs = metered(h, ctx)
+    snap = _ensure_routes(ctx.ws, _snap_or_503())
+    routes, _ = router.load(ctx.ws["id"])
+    data = [{"id": alias, "object": "model", "created": int(r.get("since") or 0), "owned_by": "modelfit",
+             "modelfit": {"routes_to": r.get("model"), "mode": r.get("mode"), "fallbacks": r.get("fallbacks")}}
+            for alias, r in routes.items()]
+    return HTTPStatus.OK, {"object": "list", "data": data}, hdrs
+
+
+@route("GET", "/v1/routes", "key")
+def v1_routes(h, ctx):
+    hdrs = metered(h, ctx)
+    snap = _ensure_routes(ctx.ws, _snap_or_503())
+    routes, ver = router.load(ctx.ws["id"])
+    needs = _needs_from_query(h.query)
+    return HTTPStatus.OK, {"version": ver, "generated_at": snap["generated_at"], "ttl_seconds": router.TTL,
+                           "routes": {a: router.resolve(ctx.ws, a, snap, needs) for a in routes}}, hdrs
+
+
+@route("GET", "/v1/routes/<alias>", "key")
+def v1_route(h, ctx, alias):
+    hdrs = metered(h, ctx)
+    snap = _ensure_routes(ctx.ws, _snap_or_503())
+    out = router.resolve(ctx.ws, alias, snap, _needs_from_query(h.query))
+    etag = f'"{ctx.ws["id"]}-{out["version"]}-{out["model"]}"'
+    hdrs.update({"ETag": etag, "Cache-Control": f"private, max-age={min(router.TTL, 60)}"})
+    return HTTPStatus.OK, out, hdrs
+
+
+def oai_error(h, status, message, code=None, headers=None, **extra):
+    """OpenAI-style error body, so SDKs surface our message."""
+    h._json({"error": {"message": message, "type": "invalid_request_error" if status < 500 else "upstream_error",
+                       "code": code, **extra}}, status, headers)
+
+
+@route("POST", "/v1/chat/completions", "key")
+def v1_chat(h, ctx):
+    """OpenAI-compatible gateway: `model` is an alias; Modelfit picks the model and fails over down the route."""
+    t0 = time.time()
+    wsid = ctx.ws["id"]
+    if not ratelimit.GATEWAY.allow(wsid):
+        return oai_error(h, 429, "too many requests per minute", "rate_limited")
+    lim = plans.limit(ctx.ws, "gateway_requests_per_day")
+    used = db.bump_usage(wsid, "gateway")
+    if lim is not None and used > lim:
+        return oai_error(h, 429, f"daily gateway limit of {lim} requests reached", "quota_exceeded", upgrade="pro")
+    try:
+        body = h.body(GATEWAY_BODY)
+    except ApiError as e:
+        return oai_error(h, e.status, str(e))
+    if not isinstance(body, dict) or not isinstance(body.get("messages"), list):
+        return oai_error(h, 400, "expected an OpenAI chat-completions body with messages")
+    snap = tenants.snapshot()
+    if not snap:
+        return oai_error(h, 503, "market data is still loading")
+    by = {m["id"]: m for m in snap["models"]}
+    requested = str(body.get("model") or "")
+    name = requested.split("/", 1)[1] if requested.lower().startswith("modelfit/") else requested
+    _ensure_routes(ctx.ws, snap)
+    routes, _ = router.load(wsid)
+    alias = next((a for a in routes if a.lower() == name.lower()), None)
+    needs = router.request_needs(body)
+    if alias:
+        chain = router.serving_chain(routes[alias], by, needs, gateway_only=True)
+        if not chain:
+            return oai_error(h, 422, f"no model routed for {alias} can serve this request ({router.needs_text(needs)}); "
+                                     "widen the alias's cap or requirements", "no_route")
+    elif "/" in requested and requested in by:
+        chain = [requested]  # a concrete model id passes straight through (no fallback)
+    else:
+        return oai_error(h, 404, f"unknown model {requested!r}: use one of your aliases ({', '.join(routes) or 'none yet'})", "model_not_found")
+    upstream_key = router.provider_key(wsid)
+    if not upstream_key:
+        return oai_error(h, 400, "add your OpenRouter API key under Routing in the Modelfit app to use the gateway", "no_provider_key")
+    stream = bool(body.get("stream"))
+    s = settings.get()
+    attempts, last = 0, (502, "no attempt made")
+    for mid in chain:
+        attempts += 1
+        payload = {**body, "model": mid}
+        payload.setdefault("provider", {"sort": "price"})
+        req = urllib.request.Request(s.upstream_url + "/chat/completions", data=json.dumps(payload).encode(), headers={
+            "Authorization": f"Bearer {upstream_key}", "Content-Type": "application/json", "User-Agent": "Modelfit-Gateway/1.0",
+            "HTTP-Referer": s.base_url or "https://modelfit.ai", "X-Title": "Modelfit"})
+        try:
+            resp = urllib.request.urlopen(req, timeout=GATEWAY_TIMEOUT)
+        except urllib.error.HTTPError as e:
+            detail = e.read()[:2000]
+            if e.code in router.FALLBACK_STATUSES:
+                last = (e.code, detail.decode("utf-8", "replace"))
+                continue
+            router.log_request(wsid, alias=alias, model=mid, status=e.code, attempts=attempts, stream=stream,
+                               latency_ms=int((time.time() - t0) * 1000), error=detail.decode("utf-8", "replace"))
+            h._bytes(detail or b"{}", e.headers.get("Content-Type") or "application/json", e.code)
+            return None
+        except (urllib.error.URLError, TimeoutError, OSError) as e:
+            last = (502, str(e))
+            continue
+        route_headers = {"X-Modelfit-Alias": alias or "", "X-Modelfit-Model": mid, "X-Modelfit-Attempts": str(attempts)}
+        if stream:
+            usage = _relay_stream(h, resp, route_headers)
+        else:
+            raw = resp.read()
+            try:
+                out = json.loads(raw)
+                usage = out.get("usage")
+                out["modelfit"] = {"alias": alias, "model": mid, "attempts": attempts}
+                h._json(out, HTTPStatus.OK, route_headers)
+            except ValueError:
+                usage = None
+                h._bytes(raw, resp.headers.get("Content-Type") or "application/json")
+        router.log_request(wsid, alias=alias, model=mid, status=200, attempts=attempts, stream=stream,
+                           latency_ms=int((time.time() - t0) * 1000),
+                           prompt_tokens=(usage or {}).get("prompt_tokens"), completion_tokens=(usage or {}).get("completion_tokens"),
+                           cost_usd=router.cost_of(by[mid], usage) if mid in by else None)
+        return None
+    router.log_request(wsid, alias=alias, model=chain[-1], status=last[0], attempts=attempts, stream=stream,
+                       latency_ms=int((time.time() - t0) * 1000), error=str(last[1]))
+    return oai_error(h, 502, f"every model on the route failed ({attempts} tried); last error {last[0]}: {str(last[1])[:300]}", "route_exhausted")
+
+
+def _relay_stream(h, resp, headers):
+    """Pass server-sent events through as they arrive; pick up the usage block if the upstream sends one."""
+    h.send_response(HTTPStatus.OK)
+    h.send_header("Content-Type", "text/event-stream")
+    h.send_header("X-Accel-Buffering", "no")
+    for k, v in headers.items():
+        h.send_header(k, v)
+    h.end_headers()
+    usage = None
+    while True:
+        line = resp.readline()
+        if not line:
+            break
+        if line.startswith(b"data: ") and b'"usage"' in line:
+            try:
+                usage = json.loads(line[6:]).get("usage") or usage
+            except ValueError:
+                pass
+        try:
+            h.wfile.write(line)
+            if line in (b"\n", b"\r\n"):
+                h.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            break
+    h.close_connection = True
+    return usage
+
+
+# ── routing settings (the app) ──────────────────────────────────────────────────────────
+@route("GET", "/api/routing")
+def api_routing(h, ctx):
+    if ctx.ws is None:
+        raise ApiError(HTTPStatus.UNAUTHORIZED, "sign in first", signin="/login")
+    snap = tenants.snapshot()
+    if snap:
+        _ensure_routes(ctx.ws, snap)
+    routes, ver = router.load(ctx.ws["id"])
+    by = {m["id"]: m for m in (snap or {}).get("models", [])}
+    fit = lambda r, m: (r.get("fit_of") or {}).get(m)  # noqa: E731
+    view = {a: {**r, "details": router.model_brief(by[r["model"]], r.get("fit")) if r.get("model") in by else None,
+                "fallback_details": [router.model_brief(by[m], fit(r, m)) for m in r.get("fallbacks") or [] if m in by]}
+            for a, r in routes.items()}
+    data, _, _ = tenants.get_settings(ctx.ws["id"])
+    return {"routes": view, "version": ver, "config": tenants.clean(data)["routes"], "providers": router.provider_status(ctx.ws["id"]),
+            "usage": router.usage_summary(ctx.ws["id"]), "gateway_today": db.usage_today(ctx.ws["id"], "gateway"),
+            "limits": {"gateway_requests_per_day": plans.limit(ctx.ws, "gateway_requests_per_day"), "fallbacks": plans.limit(ctx.ws, "fallbacks")},
+            "defaults": router.DEFAULTS}
+
+
+@route("PUT", "/api/routing/routes/<alias>", "user")
+def api_route_config(h, ctx, alias):
+    write_limit(ctx)
+    tenants.set_route(ctx.ws, alias, h.body())
+    return api_routing(h, ctx)
+
+
+@route("PUT", "/api/routing/providers/<provider>", "user")
+def api_provider_key(h, ctx, provider):
+    need_admin(ctx)
+    router.set_provider_key(ctx.ws["id"], provider, h.body().get("key"))
+    db.event("provider_key.set", ctx.ws["id"], ctx.user["id"], provider=provider)
+    return {"providers": router.provider_status(ctx.ws["id"])}
+
+
+@route("DELETE", "/api/routing/providers/<provider>", "user")
+def api_provider_key_delete(h, ctx, provider):
+    need_admin(ctx)
+    router.delete_provider_key(ctx.ws["id"], provider)
+    return {"providers": router.provider_status(ctx.ws["id"])}
 
 
 # ── entry point ─────────────────────────────────────────────────────────────────────────

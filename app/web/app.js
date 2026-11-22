@@ -21,7 +21,7 @@
     };
     const BLEND_LABEL = { "3:1": "blended 3:1 in:out", "1:1": "blended 1:1 in:out", "1:0": "input price", "0:1": "output price" };
     const PREF_KEY = "modelfit-prefs-v1";
-    const VIEWS = ["picks", "matrix", "leaderboard", "methodology", "settings"];
+    const VIEWS = ["picks", "routing", "matrix", "leaderboard", "methodology", "settings"];
     const icon = (n) => `<svg class="i"><use href="/assets/icons.svg#${n}"/></svg>`;
 
     const $ = (id) => document.getElementById(id);
@@ -845,7 +845,7 @@
             const ws = await getJSON("/api/workspace");
             if (saving || dirty) return;
             const rc = recommendationChanges(WS && WS.recommendations, ws.recommendations);
-            adoptWorkspace(ws); invalidateFit(); rerenderViews(); renderSettings();
+            adoptWorkspace(ws); invalidateFit(); rerenderViews(); renderSettings(); renderRouting();
             showBanner(rc && rc.moved.length ? describeRecommendations(rc) : "Workspace updated from another session");
         } catch (e) { /* the next tick tries again */ } finally { checkingWs = false; }
     }
@@ -1243,7 +1243,7 @@
         invalidateFit();
         renderControls(); renderAliases(); renderChartsIfVisible(); renderTable(); renderDetail(); renderMethod(); renderSources(null); renderGlossary();
         if (!$("fitModal").hidden) renderFit();
-        renderSettings(); updateFooter();
+        renderSettings(); renderRouting(); updateFooter();
     }
     function rerenderViews() { renderControls(); renderAliases(); renderChartsIfVisible(); renderTable(); renderDetail(); }
     function updateFooter() { $("footerText").innerHTML = `${DATA.models.length} models · market data built ${esc(new Date(DATA.generated_at).toLocaleString())} · benchmarks: Artificial Analysis (via OpenRouter), Epoch AI (CC-BY 4.0), LMArena (CC-BY 4.0)`; }
@@ -1254,6 +1254,7 @@
         document.querySelectorAll(".view").forEach((el) => el.classList.toggle("on", el.dataset.section === P.view));
         document.querySelectorAll("#viewNav [data-nav]").forEach((a) => a.classList.toggle("active", a.dataset.nav === P.view));
         if (P.view === "matrix" && DATA && chartsStale) requestAnimationFrame(drawCharts);
+        if (P.view === "routing") renderRouting();
         if (P.view === "settings") { renderSettings(); if (sub) requestAnimationFrame(() => { const el = document.getElementById("set-" + sub); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }); }
         window.scrollTo({ top: 0 });
     }
@@ -1447,6 +1448,115 @@
             <div class="actions"><button class="btn btn-primary" data-close-dialog>Done</button></div></div>`);
     }
 
+    // ── routing view ─────────────────────────────────────────────────────────────────
+    let ROUTING = null, codeTab = "python";
+    const relTime = (ts) => { if (!ts) return "—"; const s = Date.now() / 1000 - ts; return s < 90 ? "just now" : s < 5400 ? Math.round(s / 60) + " min ago" : s < 129600 ? Math.round(s / 3600) + " h ago" : Math.round(s / 86400) + " d ago"; };
+    function gatewaySnippet(alias) {
+        const base = location.origin + "/v1", key = cloud() ? "mf_live_…" : "local";
+        if (codeTab === "python") return `from openai import OpenAI\n\nclient = OpenAI(base_url="${base}", api_key="${key}")\nreply = client.chat.completions.create(\n    model="${alias}",   # a Modelfit alias, not a model id\n    messages=[{"role": "user", "content": "Hello"}],\n)\nprint(reply.model, reply.choices[0].message.content)`;
+        if (codeTab === "typescript") return `import OpenAI from "openai";\n\nconst client = new OpenAI({ baseURL: "${base}", apiKey: "${key}" });\nconst reply = await client.chat.completions.create({\n  model: "${alias}",   // a Modelfit alias, not a model id\n  messages: [{ role: "user", content: "Hello" }],\n});\nconsole.log(reply.model, reply.choices[0].message.content);`;
+        if (codeTab === "resolve") return `# Already have a gateway? Just ask which model to use (cache for ttl_seconds):\ncurl ${base}/routes/${alias}${cloud() ? ` \\\n  -H "Authorization: Bearer ${key}"` : ""}\n# -> {"model": "…", "fallbacks": [...], "reason": "top pick", "ttl_seconds": 300}`;
+        return `curl ${base}/chat/completions${cloud() ? ` \\\n  -H "Authorization: Bearer ${key}"` : ""} \\\n  -H "Content-Type: application/json" \\\n  -d '{"model": "${alias}", "messages": [{"role": "user", "content": "Hello"}]}'`;
+    }
+    async function renderRouting() {
+        const box = $("routingBody");
+        if (!box || P.view !== "routing") return;
+        if (isGuest()) {
+            box.innerHTML = `<div class="card set-card full route-pitch"><h2>${icon("route")}One endpoint for every agent</h2>
+                <p>Create a free workspace and your aliases become model names your agents can call: Modelfit routes each request to the best model for that slot and fails over automatically when a provider has a bad day.</p>
+                <ul class="ticks-sm"><li>${icon("check")}OpenAI-compatible <code>/v1/chat/completions</code>, streaming included</li><li>${icon("check")}Stable routes: switches only when a model is clearly better</li><li>${icon("check")}Fallbacks that respect tool calls and context length</li><li>${icon("check")}Bring your own OpenRouter key: you pay providers directly, no markup</li></ul>
+                <div class="w-actions" style="margin-top:16px"><a class="btn btn-primary" href="/signup">Start free</a><a class="btn" href="/docs#gateway" target="_blank" rel="noopener">Read the docs</a></div></div>`;
+            return;
+        }
+        try { ROUTING = await getJSON("/api/routing"); } catch (e) { box.innerHTML = `<div class="pick-empty">Could not load routing (${esc(e.message)}).</div>`; return; }
+        const R = ROUTING, admin = ["owner", "admin"].includes(ME.role), aliases = Object.keys(R.routes);
+        const prov = R.providers.openrouter, lim = R.limits.gateway_requests_per_day, first = aliases[0] || "Daily";
+        const keyUI = prov.configured
+            ? `<div class="prov ok">${icon("check")}<span><b>OpenRouter connected</b>${prov.hint ? ` · key ends in <code>${esc(prov.hint)}</code>` : " · from the server environment"}</span>${admin && prov.source === "workspace" ? `<button class="btn btn-sm btn-ghost" data-provdel="openrouter">Remove</button>` : ""}</div>`
+            : `<div class="prov warn">${icon("key")}<span><b>Connect OpenRouter to use the gateway.</b> Requests are billed to your own OpenRouter account at provider prices; we never mark them up. The key is encrypted at rest.</span></div>
+               ${admin ? `<form class="inline-form" id="provForm"><input type="password" id="provKey" placeholder="sk-or-v1-…" autocomplete="off"><button class="btn btn-primary" type="submit">Connect</button></form>` : `<p class="muted" style="font-size:.84rem">Ask a workspace admin to connect a key.</p>`}`;
+        const gw = `<div class="card set-card full gw">
+            <div class="gw-grid"><div>
+                <h2>${icon("terminal")}Gateway</h2>
+                <p>Base URL <code>${esc(location.origin)}/v1</code> · ${cloud() ? "API key from <a href=\"#settings/api\">Settings</a>" : "no key needed on this machine"} · <code>model</code> = an alias name.</p>
+                ${keyUI}
+                <div class="meters" style="margin:16px 0 0">${meter("Gateway requests today", R.gateway_today || 0, lim)}${meter("Fallbacks per alias", Math.max(0, ...Object.values(R.routes).map((r) => (r.fallbacks || []).length), 0), R.limits.fallbacks)}</div>
+            </div><div>
+                <div class="seg code-tabs">${[["python", "Python"], ["typescript", "TypeScript"], ["curl", "curl"], ["resolve", "Resolve only"]].map(([k, l]) => `<button class="tab ${codeTab === k ? "active" : ""}" data-codetab="${k}">${l}</button>`).join("")}</div>
+                <div class="code-snip" id="gwSnippet">${esc(gatewaySnippet(first))}</div>
+            </div></div></div>`;
+        const routeCard = (alias) => {
+            const r = R.routes[alias], d = r.details, holding = r.top_pick && r.model && r.top_pick !== r.model && r.mode === "auto";
+            const chain = (r.fallback_details || []).map((f, i) => `<span class="fb" data-model="${esc(f.model)}" title="${esc(f.model)}${f.gateway ? "" : " (not on OpenRouter: the gateway skips it)"}"><i>${i + 2}</i>${esc(bareName(f.name))}${f.gateway ? "" : " ⚠"}</span>`).join("");
+            const u = (R.usage.by_alias || []).find((x) => x.alias === alias);
+            return `<div class="card route-card" data-route="${esc(alias)}">
+                <div class="rc-head"><div><div class="alias-name">${esc(alias)} <span class="pill ${r.mode === "pinned" ? "warn" : "muted"}">${r.mode === "pinned" ? "Pinned" : "Auto"}</span></div>
+                    <div class="alias-note">since ${relTime(r.since)}${r.mode === "auto" ? ` · switches at +${r.min_gain} fit` : ""}</div></div>
+                    <button class="btn btn-sm" data-routecfg="${esc(alias)}">${icon("sliders")}Configure</button></div>
+                ${d ? `<div class="rc-main"><span class="rc-arrow">${icon("arrow-right")}</span><div style="min-width:0;flex:1"><div class="hp-name" data-model="${esc(d.model)}" title="${esc(d.model)}">${esc(bareName(d.name))}</div>
+                    <div class="hp-meta">${usdM(d.cost.blended)} · ${d.context ? Math.round(d.context / 1000) + "k ctx" : "ctx ?"}${d.tools ? " · tools" : ""}${d.gateway ? "" : ` · <span style="color:var(--warn)">not on OpenRouter</span>`}</div></div>
+                    ${r.fit != null ? `<button class="fit-ring" style="--p:${r.fit}" data-fit="${esc(alias)}" data-fitmodel="${esc(d.model)}"><b>${num1(r.fit)}</b></button>` : ""}</div>`
+                    : `<div class="pick-empty">${esc(r.reason)}</div>`}
+                <div class="rc-reason ${holding ? "hold" : ""}">${icon(holding ? "shield" : "info")}<span>${esc(r.reason)}${holding && byId[r.top_pick] ? ` (top pick: ${esc(shortName(byId[r.top_pick]))})` : ""}</span></div>
+                ${chain ? `<div class="rc-chain"><span class="lbl">Fallbacks</span>${chain}</div>` : `<div class="rc-chain"><span class="lbl">Fallbacks</span><span class="muted" style="font-size:.8rem">none</span></div>`}
+                <div class="rc-stats">${u ? `<span><b>${u.requests}</b> requests</span><span><b>${u.fell_back}</b> failovers</span><span><b>${u.errors}</b> errors</span><span><b>$${(u.cost_usd || 0).toFixed(4)}</b> est.</span>` : `<span class="muted">No gateway traffic in the last 24 h</span>`}</div>
+            </div>`;
+        };
+        const recent = R.usage.recent || [];
+        const log = `<div class="card set-card full"><h2>${icon("history")}Recent gateway requests</h2><p>The last 25 requests through the gateway, with the model that served them.</p>
+            ${recent.length ? `<div class="table-wrapper" style="max-height:420px"><table class="plain"><tr><th>When</th><th>Alias</th><th>Served by</th><th class="num">Status</th><th class="num">Tries</th><th class="num">Latency</th><th class="num">Tokens in/out</th><th class="num">Est. cost</th></tr>
+                ${recent.map((x) => `<tr><td>${relTime(x.at)}</td><td>${esc(x.alias || "direct")}</td><td>${esc(x.model ? bareName((byId[x.model] || {}).name || x.model) : "—")}${x.stream ? ' <span class="tag fam">stream</span>' : ""}</td>
+                    <td class="num" style="color:${x.status >= 200 && x.status < 300 ? "var(--good)" : "var(--bad)"}" title="${esc(x.error || "")}">${x.status}</td><td class="num">${x.attempts}</td><td class="num">${x.latency_ms != null ? x.latency_ms + " ms" : "—"}</td>
+                    <td class="num">${x.prompt_tokens ?? "—"} / ${x.completion_tokens ?? "—"}</td><td class="num">${x.cost_usd != null ? "$" + x.cost_usd.toFixed(5) : "—"}</td></tr>`).join("")}</table></div>`
+            : `<div class="list-empty">No requests yet. Send one with the snippet above.</div>`}</div>`;
+        box.innerHTML = gw + `<h2 class="section-title">Routes</h2><div class="route-grid">${aliases.map(routeCard).join("") || '<div class="pick-empty">Add an alias on the Picks tab to create a route.</div>'}</div>` + log;
+    }
+    function openRouteConfig(alias) {
+        const r = ROUTING.routes[alias], c = { ...ROUTING.defaults, ...(ROUTING.config[alias] || {}) }, gated = !can("routing_controls"), lim = ROUTING.limits.fallbacks;
+        if (lim != null) c.fallbacks = Math.min(c.fallbacks, lim);
+        const fbOpts = [0, 1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${n === c.fallbacks ? "selected" : ""} ${lim != null && n > lim ? "disabled" : ""}>${n}${lim != null && n > lim ? " (upgrade)" : ""}</option>`).join("");
+        openDialog(`<div class="dlg"><h2>Route for ${esc(alias)}</h2><p>Routing to <b>${esc(r.model ? shortName(byId[r.model] || { name: r.model }) : "nothing")}</b> · ${esc(r.reason)}</p>
+            ${gated ? `<div class="lock-note">${icon("lock")}<span>Pinning and switch thresholds are Pro features.</span><button class="btn btn-sm btn-primary" data-upgrade="routing_controls">Upgrade</button></div>` : ""}
+            <form id="routeForm">
+                <div class="field"><span class="lbl">Mode</span><div class="seg"><button type="button" class="tab ${c.mode === "auto" ? "active" : ""}" data-mode="auto">Auto · follow the best fit</button><button type="button" class="tab ${c.mode === "pinned" ? "active" : ""}" data-mode="pinned" ${gated ? "disabled" : ""}>Pinned · always one model</button></div></div>
+                <div class="field" id="pinField" ${c.mode === "pinned" ? "" : "hidden"}><label for="pinModel">Pinned model</label><input type="text" id="pinModel" list="modelList" value="${esc(c.pinned || r.model || "")}" placeholder="vendor/model"></div>
+                <div class="field" id="gainField" ${c.mode === "auto" ? "" : "hidden"}><label for="minGain">Switch only when a model is better by <b id="gainVal">${c.min_gain}</b> fit points</label>
+                    <input type="range" id="minGain" min="0" max="10" step="0.5" value="${c.min_gain}" ${gated ? "disabled" : ""}><span class="muted" style="font-size:.78rem">Higher = steadier routes; 0 always follows the top pick. A route that becomes ineligible switches right away.</span></div>
+                <div class="field"><label for="fbCount">Fallback models</label><select id="fbCount">${fbOpts}</select><span class="muted" style="font-size:.78rem">Tried in order when the route errors, is rate-limited, or can't serve a request (tool calls, context length).</span></div>
+                <div class="form-error" id="routeErr" hidden style="color:var(--bad);font-size:.86rem"></div>
+                <div class="actions"><button type="button" class="btn" data-close-dialog>Cancel</button><button class="btn btn-primary" type="submit">Save route</button></div>
+            </form></div>`);
+        let mode = c.mode;
+        $("dialogBody").querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => {
+            mode = b.dataset.mode; $("dialogBody").querySelectorAll("[data-mode]").forEach((x) => x.classList.toggle("active", x === b));
+            $("pinField").hidden = mode !== "pinned"; $("gainField").hidden = mode !== "auto";
+        }));
+        $("minGain").addEventListener("input", (e) => { $("gainVal").textContent = e.target.value; });
+        $("routeForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const body = { mode, min_gain: Number($("minGain").value), fallbacks: Number($("fbCount").value) };
+            if (mode === "pinned") body.pinned = $("pinModel").value.trim();
+            try { await api("PUT", "/api/routing/routes/" + encodeURIComponent(alias), body); closeDialog(); toast(`Route for ${alias} saved`); renderRouting(); }
+            catch (err) { if (err.status === 402) { closeDialog(); apiFail(err); } else { $("routeErr").textContent = err.message; $("routeErr").hidden = false; } }
+        });
+    }
+    function bindRouting() {
+        const box = $("routingBody");
+        box.addEventListener("click", async (e) => {
+            const t = e.target.closest("button");
+            if (!t) return;
+            if (t.dataset.codetab) { codeTab = t.dataset.codetab; box.querySelectorAll("[data-codetab]").forEach((b) => b.classList.toggle("active", b === t)); $("gwSnippet").textContent = gatewaySnippet(Object.keys(ROUTING.routes)[0] || "Daily"); }
+            else if (t.dataset.routecfg) openRouteConfig(t.dataset.routecfg);
+            else if (t.dataset.provdel && confirm("Remove the OpenRouter key? The gateway stops working until a new key is added.")) { try { await api("DELETE", "/api/routing/providers/" + t.dataset.provdel); renderRouting(); } catch (err) { apiFail(err); } }
+        });
+        box.addEventListener("submit", async (e) => {
+            if (e.target.id !== "provForm") return;
+            e.preventDefault();
+            try { await api("PUT", "/api/routing/providers/openrouter", { key: $("provKey").value }); toast("OpenRouter connected"); renderRouting(); }
+            catch (err) { apiFail(err); }
+        });
+    }
+
     function bind() {
         document.addEventListener("click", (e) => {
             const t = e.target.closest("[data-dim],[data-lab],[data-model],[data-view],[data-sort],[data-capreset],[data-fit],[data-fitmode],[data-fitrows],[data-mine],[data-wreset],[data-wcat],[data-gloss],[data-tune],[data-remove],[data-addalias],[data-upgrade],[data-checkout],[data-close-dialog],#copyKey");
@@ -1542,7 +1652,7 @@
         });
         document.addEventListener("themechange", () => { if (DATA) { chartsStale = true; renderCharts(); } });
         window.addEventListener("hashchange", route);
-        bindSettings();
+        bindSettings(); bindRouting();
     }
 
     function init() {
