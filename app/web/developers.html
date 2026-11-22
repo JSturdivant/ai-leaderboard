@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Model Ranking API — Modelfit Developers</title>
+    <meta name="description" content="Rank every LLM for your request: send a prompt or task, weights and filters; get scored, explained results. Free public beta key.">
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="preload" href="/assets/fonts/inter-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/assets/brand.css">
+    <link rel="stylesheet" href="/assets/site.css">
+    <link rel="stylesheet" href="/assets/developers.css">
+    <script src="/assets/theme.js"></script>
+</head>
+<body>
+<header class="site-nav" id="siteNav">
+    <div class="wrap">
+        <a class="brand" href="/" aria-label="Modelfit home"><span class="brand-mark"><svg viewBox="0 0 24 24"><path d="M4 18h4v-4h4v-4h3" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="18" cy="6.5" r="2.4" fill="#fff"/></svg></span><span class="brand-word">model<b>fit</b></span></a>
+        <nav class="nav-links"><a href="/#features">Product</a><a href="/#how">How it works</a><a href="/pricing">Pricing</a><a href="/developers">Developers</a><a href="/docs">API reference</a><a href="/app">Live matrix</a></nav>
+        <div class="nav-right">
+            <button class="btn btn-ghost btn-icon" data-theme-toggle aria-label="Toggle theme"><svg class="i icon-sun"><use href="/assets/icons.svg#sun"/></svg><svg class="i icon-moon"><use href="/assets/icons.svg#moon"/></svg></button>
+            <a class="btn btn-ghost hide-sm" href="/login">Sign in</a>
+            <a class="btn btn-primary" href="/signup">Start free</a>
+        </div>
+    </div>
+</header>
+<main class="dev">
+  <section class="dev-hero">
+    <div class="wrap dev-hero-grid">
+      <div>
+        <span class="pill"><span class="dot ok"></span>Beta · free while in beta</span>
+        <h1>Model Ranking <span class="grad-text">API</span></h1>
+        <p class="lead">Send a prompt, a whole conversation or just a description of the task. Say what matters (quality per dimension, savings, latency, reliability) and set cost limits and filters (country, open weights, tool use…). Get back every purchasable model, ranked and scored for <i>that</i> request.</p>
+        <div class="hero-cta"><a class="btn btn-grad btn-lg" href="#playground">Try it live <svg class="i"><use href="/assets/icons.svg#arrow-right"/></svg></a><a class="btn btn-lg" href="#quickstart">Quickstart</a></div>
+      </div>
+      <div class="card beta-card">
+        <div class="lbl">Public beta key</div>
+        <div class="key-reveal"><code id="betaKey">mf_beta_public</code><button class="btn btn-sm" data-copy="#betaKey"><svg class="i"><use href="/assets/icons.svg#copy"/></svg>Copy</button></div>
+        <p class="muted" style="font-size:.84rem;margin-top:10px">Shared by everyone, no sign-up. <b id="betaDaily">1,000</b> requests per day per IP address, 30 per minute. For higher limits and usage tracking, <a href="/signup">create a free account</a> and use your own key.</p>
+        <div class="code-snip" id="heroCurl" style="margin-top:12px">curl -X POST https://modelfit.ai/v1/rank</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap" id="playground">
+    <div class="section-head" style="margin-bottom:26px"><span class="eyebrow">Playground</span><h2>Rank models for your request</h2><p>Everything here calls the live API with the beta key. The request JSON updates as you type.</p></div>
+    <div class="pg">
+      <form class="card pg-form" id="pgForm" autocomplete="off">
+        <div class="pg-examples" id="pgExamples"></div>
+        <div class="field"><label for="pgPrompt">Prompt or conversation text <span class="muted">(optional)</span></label><textarea id="pgPrompt" rows="5" placeholder="Paste a prompt…"></textarea></div>
+        <div class="field"><label for="pgTask">Task description <span class="muted">(optional)</span></label><input type="text" id="pgTask" placeholder="e.g. customer support chatbot for a bank"></div>
+
+        <details class="pg-sec" open><summary>Weights <span class="muted" id="wSummary">auto from triage</span></summary>
+          <label class="check"><input type="checkbox" id="wAuto" checked> Let triage choose the weights</label>
+          <div class="pg-sliders" id="wSliders"></div>
+          <label class="check" style="margin-top:8px"><input type="checkbox" id="mAuto" checked> Performance mix from triage</label>
+          <div class="pg-sliders" id="mSliders"></div>
+        </details>
+        <details class="pg-sec"><summary>Cost limits</summary>
+          <div class="row2"><label class="field"><span class="lbl">Max $ per request</span><input type="number" id="limReq" min="0" step="0.001" placeholder="none"></label>
+          <label class="field"><span class="lbl">Max blended $/M tokens</span><input type="number" id="limBlend" min="0" step="0.05" placeholder="none"></label></div>
+          <div class="row2"><label class="field"><span class="lbl">Expected output tokens</span><input type="number" id="outTok" min="1" step="100" placeholder="auto"></label>
+          <label class="field"><span class="lbl">Results</span><select id="pgLimit"><option>5</option><option selected>10</option><option>20</option><option>50</option></select></label></div>
+        </details>
+        <details class="pg-sec"><summary>Filters <span class="muted" id="fSummary"></span></summary>
+          <div class="field"><span class="lbl">Developer country</span><div class="chip-row" id="fCountries"></div>
+            <label class="check" style="margin-top:6px"><input type="checkbox" id="fUnknown"> include models with unknown country</label></div>
+          <div class="field"><span class="lbl">Exclude countries</span><div class="chip-row" id="fExCountries"></div></div>
+          <div class="row2"><label class="field"><span class="lbl">Weights</span><select id="fOpen"><option value="">Open or closed</option><option value="true">Open weights only</option><option value="false">Closed only</option></select></label>
+          <label class="field"><span class="lbl">Min context</span><select id="fCtx"><option value="">Any</option><option>32000</option><option>128000</option><option>200000</option><option>1000000</option></select></label></div>
+          <div class="check-row"><label class="check"><input type="checkbox" id="fTools"> Tool use</label><label class="check"><input type="checkbox" id="fReasoning"> Reasoning</label><label class="check"><input type="checkbox" id="fVision"> Vision</label><label class="check"><input type="checkbox" id="fFree"> Free only</label></div>
+          <div class="row2"><label class="field"><span class="lbl">Exclude vendors</span><input type="text" id="fExVendors" placeholder="e.g. openai, x-ai"></label>
+          <label class="field"><span class="lbl">Released within</span><select id="fAge"><option value="">Any time</option><option value="90">3 months</option><option value="180">6 months</option><option value="365">12 months</option></select></label></div>
+        </details>
+        <button class="btn btn-primary btn-lg btn-block" type="submit" id="pgGo"><svg class="i"><use href="/assets/icons.svg#sparkle"/></svg>Rank models</button>
+        <div class="seg code-tabs" style="margin-top:14px"><button type="button" class="tab active" data-snip="json">Request JSON</button><button type="button" class="tab " data-snip="curl">curl</button><button type="button" class="tab " data-snip="python">Python</button><button type="button" class="tab " data-snip="js">JavaScript</button></div>
+        <div class="code-snip pg-snip" id="pgSnippet"></div>
+      </form>
+      <div class="pg-out" id="pgOut">
+        <div class="card pg-empty"><svg class="i"><use href="/assets/icons.svg#chart"/></svg><p>Pick an example or type a prompt, then <b>Rank models</b>.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="wrap docs dev-docs">
+    <nav aria-label="Developer docs"><a href="#quickstart">Quickstart</a><a href="#request">Request</a><a href="#weights">Weights &amp; scoring</a><a href="#triage">Triage (NLP)</a><a href="#filters">Filters &amp; limits</a><a href="#response">Response</a><a href="#endpoints">Other endpoints</a><a href="#errors">Errors &amp; limits</a><a href="/docs">Routing &amp; gateway →</a></nav>
+    <article>
+      <h2 id="quickstart">Quickstart</h2>
+      <p>One endpoint, JSON in, JSON out. Every field is optional: with an empty body you get the best all-round models for a generic request.</p>
+      <div class="endpoint"><span class="verb post">POST</span>/v1/rank</div>
+      <div class="code"><div class="code-head"><i></i><i></i><i></i><span>curl</span></div><pre id="qsCurl"></pre></div>
+      <div class="code"><div class="code-head"><i></i><i></i><i></i><span>python</span></div><pre id="qsPy"></pre></div>
+      <div class="code"><div class="code-head"><i></i><i></i><i></i><span>javascript</span></div><pre id="qsJs"></pre></div>
+      <p>Authenticate with <code>Authorization: Bearer &lt;key&gt;</code>: the public beta key, or a workspace key from <b>Settings → API keys</b> (counts against your plan's API quota). Self-hosted instances need no key from the local machine.</p>
+
+      <h2 id="request">Request</h2>
+      <table>
+        <tr><th>Field</th><th>Type</th><th>Meaning</th></tr>
+        <tr><td><code>prompt</code></td><td>string</td><td>A single prompt (up to 400k characters).</td></tr>
+        <tr><td><code>messages</code></td><td>array</td><td>A whole conversation in OpenAI chat format (<code>role</code> + <code>content</code>, text or content parts). Images in content parts imply vision; <code>tool</code> messages or <code>tool_calls</code> imply tool use.</td></tr>
+        <tr><td><code>task</code></td><td>string</td><td>A plain description of the job, e.g. <i>"nightly summarisation of support tickets"</i>. Weighted more than prompt text when classifying.</td></tr>
+        <tr><td><code>tools</code></td><td>array</td><td>Tool definitions you will send. Any tools means only tool-capable models are ranked.</td></tr>
+        <tr><td><code>response_format</code></td><td>object</td><td>Structured-output request; nudges triage toward extraction tasks.</td></tr>
+        <tr><td><code>weights</code></td><td>object</td><td>How much each factor matters, any scale: <code>performance</code>, <code>savings</code>, <code>latency</code>, <code>reliability</code>, <code>context</code>, <code>recency</code>. Dimension names (<code>coding</code>, <code>agentic</code>, <code>reasoning</code>, <code>chat</code>) may be used directly and add up to performance with that mix. Aliases: <code>quality</code>, <code>cost</code>, <code>speed</code>, <code>uptime</code>. Omit for automatic weights.</td></tr>
+        <tr><td><code>performance</code></td><td>object</td><td>Explicit performance mix, e.g. <code>{"coding": 0.7, "reasoning": 0.3}</code>. Omit to use the triage's mix.</td></tr>
+        <tr><td><code>limits</code></td><td>object</td><td><code>max_cost_per_request</code> (USD), <code>max_blended_cost</code>, <code>max_input_cost</code>, <code>max_output_cost</code> ($ per million tokens).</td></tr>
+        <tr><td><code>filters</code></td><td>object</td><td>Hard filters: see <a href="#filters">Filters</a>.</td></tr>
+        <tr><td><code>input_tokens</code>, <code>expected_output_tokens</code></td><td>integer</td><td>Override the token estimate used for request cost (defaults: measured from your text, and a triage-based output estimate).</td></tr>
+        <tr><td><code>limit</code></td><td>integer</td><td>Results to return, 1–50 (default 10).</td></tr>
+        <tr><td><code>dedupe</code></td><td>boolean</td><td>One row per model when it is sold several ways, e.g. paid and <code>:free</code> (default true).</td></tr>
+        <tr><td><code>explain</code></td><td>boolean</td><td>Include human-readable reasons per result (default true).</td></tr>
+      </table>
+
+      <h2 id="weights">Weights &amp; scoring</h2>
+      <p>Each candidate is scored 0–100 on every factor; the final <code>score</code> is the weighted mean, and <code>contributions</code> shows each factor's share of it.</p>
+      <table id="factorTable"><tr><th>Factor</th><th>How it is measured</th></tr></table>
+      <p><b>Automatic weights.</b> Without <code>weights</code>, Modelfit uses the triage: <code>performance 0.55, savings 0.30, latency 0.10, reliability 0.05</code> for medium complexity; <code>0.70 / 0.17 / 0.06 / 0.07</code> for high; <code>0.45 / 0.35 / 0.15 / 0.05</code> for low, with extra reliability for agentic and tool-using work. Auto mode also applies a <b>quality floor</b>: models below 60% (low complexity), 75% (medium) or 85% (high) of the best candidate's performance are left out, so nothing near-useless wins on price alone. Set <code>filters.min_performance</code> to control this yourself.</p>
+      <p><b>Performance</b> uses the same 0–100 category scores as the leaderboard, built from two dozen benchmarks (Artificial Analysis, Epoch AI, LMArena). A model needs scores covering at least half of your mix to be ranked on performance; <code>performance.coverage</code> says how much it had.</p>
+      <p><b>Latency</b> is measured endpoint data where the source publishes it; otherwise an estimate from model size signals (parameter count, tier names like <i>mini</i> or <i>pro</i>), output price and reasoning support. <code>latency.basis</code> says which. Treat estimated latency as a coarse ranking signal, not a benchmark.</p>
+
+      <h2 id="triage">Triage (NLP)</h2>
+      <p>Every request is classified before ranking; the result comes back in <code>triage</code> and drives the automatic performance mix, weights, token estimates and implied requirements.</p>
+      <ul>
+        <li><b>Classifier:</b> multinomial naive Bayes over word unigrams and bigrams (stop words removed, light stemming), trained on a labelled seed corpus of typical requests.</li>
+        <li><b>Structural signals</b> on top: code blocks and syntax, stack traces, SQL, LaTeX/equations, tool definitions and tool calls, translation and summarisation requests, structured-output keywords, plus a few non-English cues.</li>
+        <li><b>Source weighting:</b> the task description counts double, the latest user turn more than earlier turns and the system prompt.</li>
+        <li><b>Also returned:</b> complexity (low / medium / high), language, estimated input tokens, suggested output tokens, and needs (tools, vision, long context, structured output).</li>
+      </ul>
+      <table id="taskTable"><tr><th>Task type</th><th>Maps to dimensions</th></tr></table>
+      <p>Call <code>POST /v1/triage</code> with the same body to get only the classification.</p>
+
+      <h2 id="filters">Filters &amp; limits</h2>
+      <table>
+        <tr><th>Filter</th><th>Meaning</th></tr>
+        <tr><td><code>countries</code> / <code>exclude_countries</code></td><td>ISO country codes of the model developer's headquarters, e.g. <code>["US", "FR"]</code>. Models with an unknown developer country (community fine-tunes) are excluded by <code>countries</code> unless <code>include_unknown_country</code> is true.</td></tr>
+        <tr><td><code>open_weights</code></td><td><code>true</code>: only models with published weights; <code>false</code>: only closed models.</td></tr>
+        <tr><td><code>vendors</code> / <code>exclude_vendors</code></td><td>Developer ids as in model ids, e.g. <code>openai</code>, <code>anthropic</code>, <code>mistralai</code>.</td></tr>
+        <tr><td><code>models</code> / <code>exclude_models</code></td><td>Allow- or deny-list of model ids.</td></tr>
+        <tr><td><code>tools</code>, <code>reasoning</code>, <code>vision</code></td><td>Require (true) or exclude (false, for reasoning) the capability. Tools and vision are implied by the request when it contains tools or images.</td></tr>
+        <tr><td><code>min_context</code></td><td>Minimum context window in tokens. Implied when your request plus expected output exceed 8k tokens.</td></tr>
+        <tr><td><code>free</code></td><td><code>true</code>: only $0 models; <code>false</code>: exclude them.</td></tr>
+        <tr><td><code>max_age_days</code></td><td>Only models released within this many days.</td></tr>
+        <tr><td><code>min_performance</code>, <code>min_reliability</code>, <code>min_benchmark_coverage</code></td><td>Floors on the performance score, reliability score (0–100) and benchmark coverage (0–1).</td></tr>
+      </table>
+      <p>The response's <code>excluded</code> object counts how many models each filter or limit removed, so an empty result explains itself.</p>
+
+      <h2 id="response">Response</h2>
+      <div class="code"><div class="code-head"><i></i><i></i><i></i><span>200 OK (abridged)</span></div><pre id="respSample"></pre></div>
+      <table>
+        <tr><th>Field</th><th>Meaning</th></tr>
+        <tr><td><code>results[]</code></td><td>Ranked models: <code>score</code>, per-factor <code>factors</code> and <code>contributions</code>, <code>performance</code> (score, coverage, dimension scores), <code>cost</code> (estimated request USD, $/M in/out, cheapest channel and provider), <code>latency</code>, <code>reliability</code>, country, open weights, capabilities, <code>explanation</code>.</td></tr>
+        <tr><td><code>triage</code></td><td>The classification of your request (see above).</td></tr>
+        <tr><td><code>weights</code>, <code>performance_mix</code>, <code>basis</code></td><td>The normalised weights and mix actually used, and whether they came from your request or the triage.</td></tr>
+        <tr><td><code>assumptions</code></td><td>Token counts used for cost, implied requirements, auto quality floor.</td></tr>
+        <tr><td><code>candidates</code>, <code>excluded</code></td><td>How many models were ranked, and why the rest were not.</td></tr>
+        <tr><td><code>generated_at</code></td><td>When the underlying price and benchmark snapshot was built (refreshed every 30 min to 24 h per source).</td></tr>
+      </table>
+
+      <h2 id="endpoints">Other endpoints</h2>
+      <div class="endpoint"><span class="verb post">POST</span>/v1/triage</div><p>Same body as <code>/v1/rank</code>; returns only the classification.</p>
+      <div class="endpoint"><span class="verb">GET</span>/v1/rank/options</div><p>Factors, dimensions, task types, and the countries and vendors present in today's data with model counts: handy for building forms.</p>
+      <p>Want Modelfit to also <i>serve</i> the request? See <a href="/docs#gateway">the routing gateway</a>: an OpenAI-compatible endpoint where <code>model</code> is one of your aliases.</p>
+
+      <h2 id="errors">Errors &amp; limits</h2>
+      <table>
+        <tr><th>Status</th><th>When</th></tr>
+        <tr><td>400</td><td>Invalid field. The body names it: <code>{"error": "weights.speedy: unknown factor …", "field": "weights.speedy"}</code>.</td></tr>
+        <tr><td>401</td><td>Missing or invalid key.</td></tr>
+        <tr><td>413</td><td>Body over 8 MB.</td></tr>
+        <tr><td>429</td><td>Rate limit: the beta key allows 30 requests/minute and <span class="betaDailyText">1,000</span>/day per IP address; workspace keys follow your plan.</td></tr>
+        <tr><td>503</td><td>Market data still loading on a fresh instance.</td></tr>
+      </table>
+      <p><b>Beta terms.</b> The API is free during the beta and may change; breaking changes will be announced here first. Rankings are a decision aid built on public benchmarks and list prices: validate on your own workload before committing traffic.</p>
+    </article>
+  </div>
+</main>
+<footer class="site-footer">
+    <div class="wrap">
+        <div>
+            <a class="brand" href="/"><span class="brand-mark"><svg viewBox="0 0 24 24"><path d="M4 18h4v-4h4v-4h3" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="18" cy="6.5" r="2.4" fill="#fff"/></svg></span><span class="brand-word">model<b>fit</b></span></a>
+            <p class="fine">Benchmark data: Artificial Analysis (via OpenRouter), Epoch AI (CC-BY 4.0), LMArena (CC-BY 4.0). Prices: OpenRouter, Nous Portal, LiteLLM.</p>
+        </div>
+        <div><h4>Product</h4><ul><li><a href="/app">Live matrix</a></li><li><a href="/pricing">Pricing</a></li><li><a href="/developers">Developers</a></li><li><a href="/docs">API reference</a></li></ul></div>
+        <div><h4>Account</h4><ul><li><a href="/signup">Start free</a></li><li><a href="/login">Sign in</a></li></ul></div>
+        <div><h4>Developers</h4><ul><li><a href="/docs#webhooks">Webhooks</a></li><li><a href="/docs#limits">Rate limits</a></li></ul></div>
+    </div>
+</footer>
+<script src="/assets/site.js"></script>
+<script src="/assets/developers.js"></script>
+</body>
+</html>

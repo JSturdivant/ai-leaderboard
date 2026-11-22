@@ -8,6 +8,10 @@ your agents' requests to it through one OpenAI-compatible endpoint, keeping the 
   only when a model is clearly better, or pin one), ordered fallbacks that respect tool calls and context length,
   and a request log. Bring your own OpenRouter key: provider prices, no markup. Or resolve routes yourself with
   `GET /v1/routes/{alias}`.
+* **Model Ranking API (beta):** `POST /v1/rank` with an optional prompt, conversation or task description, weights
+  (performance per dimension, savings, latency, reliability, context, recency), cost limits and filters (country, open
+  weights, tools, vision, context…) returns every purchasable model ranked, scored and explained. Requests are
+  classified by a built-in NLP triage. Free public beta key `mf_beta_public`; docs and playground at `/developers`.
 * **Picks:** for each alias (budget + requirements + what matters), the top three fits, always current.
 * **Matrix:** every purchasable model on one cost × capability chart with the efficiency frontier.
 * **Leaderboard:** $ per 100 points of capability, per use case.
@@ -50,6 +54,7 @@ docker run -p 8787:8787 --env-file .env -v modelfit-data:/data modelfit
 | `app/modelfit/` | data pipeline, scoring, and the SaaS layer (auth, plans, billing, tenants) |
 | `app/web/` | landing, pricing, sign-in, API docs, and the app (vanilla JS + vendored Chart.js) |
 | `app/config.json` | data sources, benchmark weights, alias presets (no secrets) |
+| `app/modelfit/ranker.py`, `triage.py` | the ranking API and the request classifier |
 | `docs/` | [architecture](docs/ARCHITECTURE.md), [go-to-market](docs/GTM.md), [brand](docs/BRAND.md), [methodology](docs/METHODOLOGY.md) |
 
 Public API reference: `/docs` on any running instance.

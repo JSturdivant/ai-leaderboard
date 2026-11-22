@@ -38,6 +38,7 @@ def _trim_model(m):
         "reasoning": "reasoning" in params or "include_reasoning" in params,
         "expiration": m.get("expiration_date"),
         "benchmarks": m.get("benchmarks") or None,
+        "hf": m.get("hugging_face_id") or None,   # set for open-weight models
     }
 
 
@@ -54,6 +55,8 @@ def _trim_endpoint(e):
         "out": per_million(p.get("completion")),
         "cache_read": per_million(p.get("input_cache_read")),
         "ctx": e.get("context_length"),
+        "latency": num(e.get("latency_last_30m")),        # only returned to authenticated callers today
+        "throughput": num(e.get("throughput_last_30m")),
     }
 
 

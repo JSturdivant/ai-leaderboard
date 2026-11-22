@@ -26,7 +26,7 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, unquote, urlparse
 
 from modelfit import DATA_DIR, LATEST, ROOT
-from modelfit import auth, billing, build, db, plans, ratelimit, router, settings, tenants
+from modelfit import auth, billing, build, db, plans, ranker, ratelimit, router, settings, tenants, triage
 from modelfit.scheduler import Scheduler
 from modelfit.store import load_config, load_status
 
@@ -41,7 +41,7 @@ mimetypes.add_type("image/svg+xml", ".svg")
 log = logging.getLogger("server")
 
 PAGES = {"/": "index.html", "/pricing": "pricing.html", "/login": "auth.html", "/signup": "auth.html",
-         "/app": "app.html", "/docs": "docs.html"}
+         "/app": "app.html", "/docs": "docs.html", "/developers": "developers.html"}
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
        "font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'")
 
@@ -192,6 +192,24 @@ class Handler(SimpleHTTPRequestHandler):
             raise ApiError(HTTPStatus.UNAUTHORIZED, "send your API key as 'Authorization: Bearer mf_live_...'")
         return ctx
 
+    def rank_context(self):
+        """The ranking API accepts a workspace key, the public beta key, a signed-in session, or (self-hosted) nothing."""
+        s = settings.get()
+        hdr = self.headers.get("Authorization") or ""
+        if hdr.lower().startswith("bearer "):
+            token = hdr[7:].strip()
+            if s.beta_enabled and s.beta_key and token == s.beta_key:
+                return Ctx(None, None, "beta", "beta")
+            ws = auth.key_workspace(token)
+            if not ws:
+                raise ApiError(HTTPStatus.UNAUTHORIZED, "invalid or revoked API key" + (f"; the public beta key is {s.beta_key}" if s.beta_enabled else ""))
+            return Ctx(None, ws, "api", "key")
+        ctx = self.context()
+        if ctx.ws is None:
+            hint = f" (free beta: 'Authorization: Bearer {s.beta_key}')" if s.beta_enabled else ""
+            raise ApiError(HTTPStatus.UNAUTHORIZED, "send an API key as 'Authorization: Bearer <key>'" + hint)
+        return ctx
+
     # ── dispatch ──────────────────────────────────────────────────────────────────────
     def do_GET(self):
         self._dispatch("GET")
@@ -228,11 +246,13 @@ class Handler(SimpleHTTPRequestHandler):
                 writes = method != "GET"
                 is_webhook = path == "/api/billing/webhook"
                 # API calls (agents, SDKs) cannot send our CSRF header; a JSON body is preflight-protected instead
-                api_json = auth_ == "key" and (self.headers.get("Content-Type") or "").split(";")[0].strip() == "application/json"
+                api_json = auth_ in ("key", "rank") and (self.headers.get("Content-Type") or "").split(";")[0].strip() == "application/json"
                 if writes and not is_webhook and not api_json and (self.headers.get("X-Requested-With") != CSRF_HEADER or not self._origin_ok()):
                     raise ApiError(HTTPStatus.FORBIDDEN, "forbidden")
                 if auth_ == "key":
                     ctx = self.key_context()
+                elif auth_ == "rank":
+                    ctx = self.rank_context()
                 elif is_webhook:
                     ctx = Ctx()
                 else:
@@ -337,7 +357,8 @@ def healthz(h, ctx):
 @route("GET", "/api/config")
 def api_config(h, ctx):
     s = settings.get()
-    return {"mode": s.mode, "dev_billing": s.dev_billing, "billing_live": s.billing_live, "presets": list(load_config()["aliases"])}
+    return {"mode": s.mode, "dev_billing": s.dev_billing, "billing_live": s.billing_live, "presets": list(load_config()["aliases"]),
+            "beta_key": s.beta_key if s.beta_enabled else None, "beta_daily": s.beta_daily}
 
 
 @route("GET", "/api/plans")
@@ -877,6 +898,64 @@ def api_provider_key_delete(h, ctx, provider):
     need_admin(ctx)
     router.delete_provider_key(ctx.ws["id"], provider)
     return {"providers": router.provider_status(ctx.ws["id"])}
+
+
+# ── model ranking API (/v1/rank, /v1/triage) ────────────────────────────────────────────
+def rank_metered(h, ctx):
+    """Beta key: per-IP burst + daily limits. Workspace key or session: the plan's API quota. Self-hosted: none."""
+    s = settings.get()
+    if ctx.via == "beta":
+        ip = h.client_ip()
+        if not ratelimit.BETA.allow(ip):
+            raise ApiError(HTTPStatus.TOO_MANY_REQUESTS, "beta key: too many requests per minute from this address")
+        used = db.bump_usage(f"beta:{ip}", "rank")
+        if used > s.beta_daily:
+            raise ApiError(HTTPStatus.TOO_MANY_REQUESTS, f"beta key: daily limit of {s.beta_daily} requests per address reached; "
+                           "create a free account for your own key", signup="/signup")
+        return {"X-RateLimit-Limit": str(s.beta_daily), "X-RateLimit-Remaining": str(max(0, s.beta_daily - used)), "X-Modelfit-Beta": "true"}
+    if ctx.via == "selfhost":
+        return {"X-RateLimit-Limit": "unlimited"}
+    return metered(h, ctx)
+
+
+def _rank_body(h):
+    body = h.body(GATEWAY_BODY)
+    try:
+        return ranker.parse(body)
+    except ranker.RankError as e:
+        raise ApiError(HTTPStatus.BAD_REQUEST, str(e), field=e.field) from None
+
+
+@route("POST", "/v1/rank", "rank")
+def v1_rank(h, ctx):
+    """Rank every purchasable model for one request (prompt / conversation / task + weights, limits, filters)."""
+    hdrs = rank_metered(h, ctx)
+    req = _rank_body(h)
+    snap = tenants.snapshot()
+    if not snap:
+        raise ApiError(HTTPStatus.SERVICE_UNAVAILABLE, "market data is still loading; try again in a minute")
+    out = ranker.rank(snap, req)
+    db.event("rank", ctx.ws["id"] if ctx.ws else None, None, via=ctx.via, category=out["triage"]["category"],
+             candidates=out["candidates"])
+    return HTTPStatus.OK, out, hdrs
+
+
+@route("POST", "/v1/triage", "rank")
+def v1_triage(h, ctx):
+    """Just the classification: what a prompt / conversation / task needs from a model."""
+    hdrs = rank_metered(h, ctx)
+    req = _rank_body(h)
+    out = triage.classify(req["prompt"], req["messages"], req["task"], req["tools"], req["response_format"])
+    out.pop("empty", None)
+    return HTTPStatus.OK, {"object": "triage", **out}, hdrs
+
+
+@route("GET", "/v1/rank/options", "rank")
+def v1_rank_options(h, ctx):
+    snap = tenants.snapshot()
+    if not snap:
+        raise ApiError(HTTPStatus.SERVICE_UNAVAILABLE, "market data is still loading")
+    return ranker.options(snap)
 
 
 # ── entry point ─────────────────────────────────────────────────────────────────────────

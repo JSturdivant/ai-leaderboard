@@ -17,6 +17,7 @@ from .names import NameIndex, slug, strip_date
 from .sources import SOURCES
 from .store import load_raw, load_status
 from .util import log, write_json_atomic
+from . import modelmeta
 from . import picks as picks_mod
 
 _write_lock = threading.Lock()
@@ -149,6 +150,8 @@ def build(cfg, now=None):
                 "tools": bool((om or {}).get("tools") or (nm or {}).get("tools")),
                 "reasoning": bool((om or {}).get("reasoning") or (nm or {}).get("reasoning")),
                 "canonical": (om or {}).get("canonical_slug"),
+                "vision": "image" in ((om or nm or {}).get("input_modalities") or []),
+                "_hf": (om or {}).get("hf"),
             }
 
     # ── 2. prices from the three channels, then the lowest ───────────────────────────
@@ -191,6 +194,12 @@ def build(cfg, now=None):
             "channels": {k: v[:4] for k, v in chan.items() if v},
         }
         row["free"] = b == 0
+        # facts the ranking API filters and scores on (see modelmeta.py)
+        eps = or_eps.get(mid) or []
+        row["open_weights"] = modelmeta.open_weights(row, row.pop("_hf", None))
+        row["country"] = modelmeta.country(row["vendor"], cfg.get("vendors"))
+        row["reliability"], row["providers"] = modelmeta.reliability(eps)
+        row["latency"] = modelmeta.latency(row, eps)
 
     # ── 3. attach benchmark metrics ───────────────────────────────────────────────────
     values = {mid: {} for mid in rows}  # mid -> metric -> {v,label,how,n}
@@ -315,6 +324,7 @@ def build(cfg, now=None):
             "categories": {k: {"label": c["label"], "short": c.get("short", k.title()), "explain": c.get("explain", ""), "metrics": c["metrics"]}
                            for k, c in cats.items()},
             "aliases": aliases,
+            "vendors": cfg.get("vendors") or {},
             "current_models": cfg.get("current_models") or {},
             "age": cfg["age"],
             "score_floor_for_ratio": sc_cfg["score_floor_for_ratio"],

@@ -167,6 +167,7 @@
 .docs th, .docs td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border-subtle); vertical-align: top; }
 .docs th { font-size: 0.74rem; text-transform: uppercase; letter-spacing: .06em; color: var(--text-muted); }
 
+.custom-callout { padding: 12px 14px; border-radius: 10px; background: var(--accent-soft); border: 1px solid var(--accent-ring); }
 .center-page { min-height: 70vh; display: grid; place-items: center; text-align: center; padding: 40px 20px; }
 .center-page h1 { font-size: 4rem; letter-spacing: -0.05em; }
 

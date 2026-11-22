@@ -74,6 +74,15 @@ Flag a workspace as a PQL when any of: ≥ 3 aliases with a current model set; A
 ≥ 150 API calls/day on Free; ≥ 2 sign-ins from the same company domain. The `events` and `usage` tables carry
 everything needed; pipe them to the CRM weekly.
 
+## Developer API (beta)
+
+The Model Ranking API (`/v1/rank`) is the top of the developer funnel: anyone can call it with the public beta key
+`mf_beta_public` (1,000 requests/day per IP) straight from the `/developers` playground or their own code, with no
+sign-up. It turns "which model should I use for this?" into one request. Conversion path: beta key → hitting the
+per-IP limit or wanting usage tracking → free account with a personal key → aliases, routing gateway and Pro. During
+the beta, ranking calls on workspace keys count against the normal API quota; price it separately (or fold it into
+Pro) once usage data shows how developers call it.
+
 ## Channels
 
 * **Content/SEO:** weekly "model market report" generated from pick history (what changed, who got cheaper);

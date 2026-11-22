@@ -13,6 +13,9 @@ STRIPE_PRICE_TEAM_MONTHLY, STRIPE_PRICE_TEAM_YEARLY      billing (without them, 
 MODELFIT_WEBHOOK_URL, MODELFIT_WEBHOOK_SECRET            selfhost only: seed the workspace's pick-change webhook
 OPENROUTER_API_KEY      selfhost only: the gateway's upstream key when the workspace has not stored one
 MODELFIT_UPSTREAM_URL   the gateway's OpenAI-compatible upstream (default https://openrouter.ai/api/v1)
+MODELFIT_BETA_KEY       the shared public key for the free ranking-API beta (default mf_beta_public)
+MODELFIT_BETA           0 to turn the public beta key off
+MODELFIT_BETA_DAILY     ranking requests per day per IP address on the beta key (default 1000)
 """
 
 import os
@@ -39,6 +42,9 @@ class Settings:
     webhook_secret: str = ""
     openrouter_key: str = ""
     upstream_url: str = "https://openrouter.ai/api/v1"
+    beta_key: str = "mf_beta_public"
+    beta_enabled: bool = True
+    beta_daily: int = 1000
 
     @property
     def cloud(self):
@@ -83,6 +89,9 @@ def load(env=None):
         webhook_secret=e.get("MODELFIT_WEBHOOK_SECRET") or "",
         openrouter_key=e.get("OPENROUTER_API_KEY") or "",
         upstream_url=(e.get("MODELFIT_UPSTREAM_URL") or "https://openrouter.ai/api/v1").rstrip("/"),
+        beta_key=(e.get("MODELFIT_BETA_KEY") or "mf_beta_public").strip(),
+        beta_enabled=(e.get("MODELFIT_BETA") or "1").strip().lower() not in ("0", "false", "no", "off"),
+        beta_daily=int(e.get("MODELFIT_BETA_DAILY") or 1000),
     )
     for plan in ("pro", "team"):
         for interval in ("monthly", "yearly"):
