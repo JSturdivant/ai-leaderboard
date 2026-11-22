@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Modelfit</title>
+    <meta name="description" content="Live LLM price × benchmark matrix and per-alias model picks.">
+    <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+    <link rel="preload" href="/assets/fonts/inter-var-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="/assets/brand.css">
+    <link rel="stylesheet" href="/app.css">
+    <script src="/assets/theme.js"></script>
+</head>
+<body class="app">
+<header class="topbar">
+    <div class="topbar-in">
+        <a class="brand" href="/" aria-label="Modelfit home"><span class="brand-mark"><svg viewBox="0 0 24 24"><path d="M4 18h4v-4h4v-4h3" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="18" cy="6.5" r="2.4" fill="#fff"/></svg></span><span class="brand-word">model<b>fit</b></span></a>
+        <span class="ws-name" id="wsName" hidden></span>
+        <nav class="tabs-nav" id="viewNav" aria-label="Sections">
+            <a href="#picks" data-nav="picks"><svg class="i"><use href="/assets/icons.svg#target"/></svg><span>Picks</span></a>
+            <a href="#routing" data-nav="routing"><svg class="i"><use href="/assets/icons.svg#route"/></svg><span>Routing</span></a>
+            <a href="#matrix" data-nav="matrix"><svg class="i"><use href="/assets/icons.svg#chart"/></svg><span>Matrix</span></a>
+            <a href="#leaderboard" data-nav="leaderboard"><svg class="i"><use href="/assets/icons.svg#table"/></svg><span>Leaderboard</span></a>
+            <a href="#methodology" data-nav="methodology"><svg class="i"><use href="/assets/icons.svg#book"/></svg><span>Methodology</span></a>
+        </nav>
+        <div class="topbar-right">
+            <button class="status-pill" id="statusPill" title="Data freshness" aria-haspopup="true" aria-expanded="false"><span class="dot" id="statusDot"></span><span id="statusText">Loading…</span></button>
+            <button class="btn btn-ghost btn-icon" id="refreshBtn" title="Fetch every source now" hidden><svg class="i"><use href="/assets/icons.svg#refresh"/></svg></button>
+            <button class="btn btn-sm btn-grad" id="upgradeBtn" hidden><svg class="i"><use href="/assets/icons.svg#sparkle"/></svg>Upgrade</button>
+            <a class="btn btn-sm btn-primary" id="signupBtn" href="/signup" hidden>Start free</a>
+            <a class="btn btn-sm btn-ghost" id="signinBtn" href="/login" hidden>Sign in</a>
+            <button class="btn btn-ghost btn-icon" data-theme-toggle aria-label="Toggle theme"><svg class="i icon-sun"><use href="/assets/icons.svg#sun"/></svg><svg class="i icon-moon"><use href="/assets/icons.svg#moon"/></svg></button>
+            <div class="menu" id="accountMenu" hidden>
+                <button class="avatar" id="avatarBtn" aria-haspopup="true" aria-expanded="false" title="Account"></button>
+                <div class="menu-pop" id="menuPop" hidden>
+                    <div class="menu-head"><b id="menuName"></b><span id="menuEmail"></span><span class="pill" id="menuPlan"></span></div>
+                    <a href="#settings" data-nav="settings"><svg class="i"><use href="/assets/icons.svg#settings"/></svg>Settings &amp; billing</a>
+                    <a href="#settings/api" data-nav="settings"><svg class="i"><use href="/assets/icons.svg#key"/></svg>API keys</a>
+                    <a href="/docs" target="_blank" rel="noopener"><svg class="i"><use href="/assets/icons.svg#book"/></svg>API docs</a>
+                    <button id="logoutBtn" data-cloud-only><svg class="i"><use href="/assets/icons.svg#logout"/></svg>Sign out</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="sources-pop" id="sourcesPop" hidden><div class="lbl">Data sources</div><div id="sourceDots"></div></div>
+</header>
+
+<div class="guest-bar" id="guestBar" hidden>
+    <svg class="i"><use href="/assets/icons.svg#sparkle"/></svg>
+    <span>You're exploring the live data as a guest. <b>Create a free workspace</b> to save your own aliases and caps and get API access.</span>
+    <a class="btn btn-sm btn-primary" href="/signup">Start free</a>
+</div>
+
+<main class="app-main">
+    <div id="emptyState" class="empty-state" hidden>
+        <div class="spinner"></div>
+        <h2>Collecting market data…</h2>
+        <p id="emptyDetail">The first pass takes about 20 seconds. The page fills in on its own.</p>
+    </div>
+
+    <div id="mainContent" hidden>
+        <!-- Picks -->
+        <section class="view" data-section="picks">
+            <div class="view-head">
+                <div>
+                    <h1>Model picks <span class="save-state" id="saveState" aria-live="polite"></span></h1>
+                    <p>The three best-fitting models for each alias, under its cost cap and requirements. Click a <b>fit</b> score to see exactly how it was calculated.</p>
+                </div>
+                <div class="view-actions">
+                    <label class="inline-field"><span>Cost basis</span><select class="blend-select" aria-label="Cost basis">
+                        <option value="3:1">Blended 3:1</option><option value="1:1">Blended 1:1</option><option value="1:0">Input only</option><option value="0:1">Output only</option>
+                    </select></label>
+                    <button class="btn btn-primary" id="addAliasBtn"><svg class="i"><use href="/assets/icons.svg#plus"/></svg>Add alias</button>
+                </div>
+            </div>
+            <div class="alias-grid" id="aliasGrid"></div>
+            <datalist id="modelList"></datalist>
+        </section>
+
+        <!-- Routing -->
+        <section class="view" data-section="routing">
+            <div class="view-head">
+                <div>
+                    <h1>Routing <span class="pill">OpenAI-compatible</span></h1>
+                    <p>Point any agent or OpenAI SDK at Modelfit and use an alias as the model name. Each alias resolves to a <b>stable route</b> that only switches when a better model is clearly better, with automatic failover down its fallbacks.</p>
+                </div>
+            </div>
+            <div id="routingBody"><div class="spinner" style="margin:60px auto"></div></div>
+        </section>
+
+        <!-- Matrix -->
+        <section class="view" data-section="matrix">
+            <div class="view-head">
+                <div>
+                    <h1>Cost × capability</h1>
+                    <p>Up and to the left is better. Faded dots are older models, hollow dots have thin benchmark coverage, the dashed line is the efficiency frontier.</p>
+                </div>
+            </div>
+            <div class="toolbar card">
+                <div class="toolbar-row">
+                    <div class="seg" id="dimTabs" role="tablist" aria-label="Dimension"></div>
+                    <div class="seg" id="mineTabs" aria-label="Models shown"></div>
+                    <div class="toolbar-grow"></div>
+                    <input type="search" id="searchBox" list="modelList" placeholder="Find a model…" autocomplete="off" aria-label="Find a model">
+                    <button class="btn btn-sm" id="filtersBtn" aria-expanded="false" aria-controls="filtersPanel"><svg class="i"><use href="/assets/icons.svg#sliders"/></svg>Filters</button>
+                </div>
+                <div class="toolbar-more" id="filtersPanel" hidden>
+                    <label class="field"><span class="lbl">Cost basis</span><select class="blend-select" id="blendSelect">
+                        <option value="3:1">Blended 3:1 input:output</option><option value="1:1">Blended 1:1</option><option value="1:0">Input price only</option><option value="0:1">Output price only</option>
+                    </select></label>
+                    <label class="field"><span class="lbl">Fade older than</span><select id="fadeSelect"><option value="30">1 month</option><option value="90">3 months</option><option value="180">6 months</option><option value="365">12 months</option><option value="0">Never</option></select></label>
+                    <label class="field"><span class="lbl">Hide older than</span><select id="hideSelect"><option value="0">Show all</option><option value="180">6 months</option><option value="365">12 months</option><option value="540">18 months</option></select></label>
+                    <div class="field"><span class="lbl">Overlays</span><div class="check-row">
+                        <label class="check"><input type="checkbox" id="optFrontier" checked> Frontier</label>
+                        <label class="check"><input type="checkbox" id="optCaps" checked> Alias caps</label>
+                        <label class="check"><input type="checkbox" id="optGrid"> 2×2 grid</label>
+                    </div></div>
+                    <div class="field grow"><span class="lbl">Labs</span><div class="chip-row" id="labChips"></div></div>
+                </div>
+            </div>
+            <div class="chart-container card" id="chartBox"><canvas id="scatterChart"></canvas></div>
+            <div class="chart-grid" id="chartGrid" hidden></div>
+            <div class="mine-note" id="mineNote" hidden></div>
+        </section>
+
+        <!-- Leaderboard -->
+        <section class="view" data-section="leaderboard">
+            <div class="view-head">
+                <div>
+                    <h1>$ / intelligence leaderboard</h1>
+                    <p><b>$/100 pts</b> = blended $/M tokens ÷ score × 100: the price of 100 points of capability at each model's efficiency. Lower is better.</p>
+                </div>
+                <div class="view-actions"><button class="btn" id="downloadCsv"><svg class="i"><use href="/assets/icons.svg#download"/></svg>CSV</button></div>
+            </div>
+            <div class="toolbar card">
+                <div class="toolbar-row">
+                    <div class="seg" id="dimTabs2" aria-label="Dimension"></div>
+                    <div class="toolbar-grow"></div>
+                    <label class="inline-field"><span>Min score</span><input type="number" id="minScore" min="0" max="100" step="5" value="50"></label>
+                    <div class="check-row">
+                        <label class="check"><input type="checkbox" id="fEfficient"> Efficient</label>
+                        <label class="check"><input type="checkbox" id="fFree"> Free</label>
+                        <label class="check"><input type="checkbox" id="fTools"> Tool use</label>
+                        <label class="check"><input type="checkbox" id="fConfident"> Well covered</label>
+                    </div>
+                </div>
+            </div>
+            <div class="table-wrapper card">
+                <table id="dataTable"><thead><tr id="tableHead"></tr></thead><tbody id="dataTableBody"></tbody></table>
+            </div>
+            <div class="table-foot"><span id="rowCount"></span> <button class="btn btn-sm" id="showAll" hidden>Show all</button></div>
+        </section>
+
+        <!-- Methodology -->
+        <section class="view" data-section="methodology">
+            <div class="view-head"><div><h1>Methodology</h1><p>How every score is built, where the data comes from, and what each benchmark measures.</p></div></div>
+            <h2 class="section-title">How scores are built</h2>
+            <div class="method" id="methodology"></div>
+            <h2 class="section-title">Sources &amp; freshness</h2>
+            <div class="table-wrapper card"><table class="plain" id="sourcesTable"></table></div>
+            <details class="diag" id="diagnostics"></details>
+            <div id="glossary">
+                <h2 class="section-title">Glossary</h2>
+                <div id="glossaryBody"></div>
+            </div>
+        </section>
+
+        <!-- Settings -->
+        <section class="view" data-section="settings">
+            <div class="view-head"><div><h1>Settings</h1><p>Your plan, API access, webhooks and team.</p></div></div>
+            <div class="settings" id="settingsBody"></div>
+        </section>
+    </div>
+
+    <footer class="app-footer" id="footerText"></footer>
+</main>
+
+<aside class="drawer" id="detailPanel" hidden aria-label="Model details"></aside>
+<div class="drawer-scrim" id="drawerScrim" hidden></div>
+
+<div class="modal" id="fitModal" hidden>
+    <div class="modal-card wide" role="dialog" aria-modal="true" aria-labelledby="fitTitle">
+        <button class="btn btn-ghost btn-icon modal-x" id="fitClose" aria-label="Close"><svg class="i"><use href="/assets/icons.svg#x"/></svg></button>
+        <div id="fitBody"></div>
+    </div>
+</div>
+<div class="modal" id="dialog" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+        <button class="btn btn-ghost btn-icon modal-x" data-close-dialog aria-label="Close"><svg class="i"><use href="/assets/icons.svg#x"/></svg></button>
+        <div id="dialogBody"></div>
+    </div>
+</div>
+<div class="file-banner" id="fileBanner" role="status" aria-live="polite"></div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="/vendor/chart.umd.js"></script>
+<script src="/vendor/chartjs-plugin-annotation.min.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>
