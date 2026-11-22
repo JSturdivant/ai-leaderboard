@@ -11,7 +11,10 @@ your agents' requests to it through one OpenAI-compatible endpoint, keeping the 
 * **Model Ranking API (beta):** `POST /v1/rank` with an optional prompt, conversation or task description, weights
   (performance per dimension, savings, latency, reliability, context, recency), cost limits and filters (country, open
   weights, tools, vision, context…) returns every purchasable model ranked, scored and explained. Requests are
-  classified by a built-in NLP triage. Free public beta key `mf_beta_public`; docs and playground at `/developers`.
+  classified by a built-in NLP triage. Mid-conversation, pass `current_model`: costs are simulated over the next
+  turns with prompt caching priced per provider (warm cache on the current model, cold elsewhere), and a
+  `switching` block says stay or switch, with break-even turn. Free public beta key `mf_beta_public`; docs and
+  playground at `/developers`.
 * **Picks:** for each alias (budget + requirements + what matters), the top three fits, always current.
 * **Matrix:** every purchasable model on one cost × capability chart with the efficiency frontier.
 * **Leaderboard:** $ per 100 points of capability, per use case.

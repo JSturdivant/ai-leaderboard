@@ -47,12 +47,20 @@ def _first_party(vendor, provider, overrides):
 
 
 def _minimal(cands):
-    """Keep only endpoints not beaten on both input and output price."""
+    """Keep only endpoints not beaten on input, output *and* cached-input price (a pricier endpoint with much cheaper
+    cache reads can be the cheapest choice for a long conversation, so it must survive)."""
+    def cr(c):
+        return c.get("cr") if c.get("cr") is not None else c["in"]
     out = []
-    for c in sorted(cands, key=lambda c: (c["in"], c["out"])):
-        if not out or c["out"] < out[-1]["out"] - 1e-12:
+    for c in sorted(cands, key=lambda c: (c["in"], c["out"], cr(c))):
+        if not any(o["in"] <= c["in"] + 1e-12 and o["out"] <= c["out"] + 1e-12 and cr(o) <= cr(c) + 1e-12 for o in out):
             out.append(c)
     return out
+
+
+def _cache_fields(src):
+    """Cache prices of an endpoint / catalogue / price-table entry, in candidate form."""
+    return {"cr": src.get("cache_read"), "cw": src.get("cache_write"), "long_tier": src.get("long_tier")}
 
 
 def _endpoint_cands(eps, cost_cfg, vendor, first_party_only=False):
@@ -74,7 +82,7 @@ def _endpoint_cands(eps, cost_cfg, vendor, first_party_only=False):
         if e.get("quant") in bad_quant and not first:
             continue
         note = e.get("quant") if e.get("quant") not in (None, "unknown") else None
-        out.append({"in": e["in"], "out": e["out"], "provider": e.get("provider") or "?", "note": note})
+        out.append({"in": e["in"], "out": e["out"], "provider": e.get("provider") or "?", "note": note, **_cache_fields(e)})
     return _minimal(out)
 
 
@@ -162,7 +170,7 @@ def build(cfg, now=None):
             eps = or_eps.get(mid)
             if eps is None:  # endpoint list not fetched: fall back to the catalogue price
                 if _price_ok(om.get("in"), om.get("out")):
-                    chan["openrouter"] = [{"in": om["in"], "out": om["out"], "provider": "catalogue price", "note": None}]
+                    chan["openrouter"] = [{"in": om["in"], "out": om["out"], "provider": "catalogue price", "note": None, **_cache_fields(om)}]
             else:
                 chan["openrouter"] = _endpoint_cands(eps, cost_cfg, row["vendor"])
                 chan["primary"] += _endpoint_cands(eps, cost_cfg, row["vendor"], first_party_only=True)
@@ -179,7 +187,7 @@ def build(cfg, now=None):
             )
             if hits:  # only the model's own lab counts as a primary source (not e.g. a host re-listing it)
                 chan["primary"] += _minimal(
-                    [{"in": h["in"], "out": h["out"], "provider": f"{h['provider']} (list price)", "note": None}
+                    [{"in": h["in"], "out": h["out"], "provider": f"{h['provider']} (list price)", "note": None, **_cache_fields(h)}
                      for h in hits
                      if _price_ok(h["in"], h["out"]) and row["vendor"] in vendors_of.get(h["provider"], [])]
                 )
@@ -191,7 +199,7 @@ def build(cfg, now=None):
         b, _, ch, c = min(flat, key=lambda t: (t[0], t[1]))
         row["cost"] = {
             "lowest": {"channel": ch, "provider": c["provider"], "in": c["in"], "out": c["out"], "blended": round(b, 6), "note": c["note"]},
-            "channels": {k: v[:4] for k, v in chan.items() if v},
+            "channels": {k: v[:6] for k, v in chan.items() if v},
         }
         row["free"] = b == 0
         # facts the ranking API filters and scores on (see modelmeta.py)
@@ -325,6 +333,7 @@ def build(cfg, now=None):
                            for k, c in cats.items()},
             "aliases": aliases,
             "vendors": cfg.get("vendors") or {},
+            "cache": cfg.get("cache") or {},
             "current_models": cfg.get("current_models") or {},
             "age": cfg["age"],
             "score_floor_for_ratio": sc_cfg["score_floor_for_ratio"],

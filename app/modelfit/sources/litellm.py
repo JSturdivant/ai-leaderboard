@@ -36,6 +36,8 @@ def fetch(cfg, prev=None):
                 "out": round(o * 1e6, 6),
                 "cache_read": None if num(v.get("cache_read_input_token_cost")) is None
                 else round(num(v["cache_read_input_token_cost"]) * 1e6, 6),
+                "cache_write": None if num(v.get("cache_creation_input_token_cost")) is None
+                else round(num(v["cache_creation_input_token_cost"]) * 1e6, 6),
                 "deprecated": v.get("deprecation_date"),
             }
         )

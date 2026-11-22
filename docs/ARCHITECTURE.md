@@ -87,7 +87,15 @@ body (prompt? messages? task? weights? limits? filters?)
 * **Auth:** a workspace API key (metered on the plan's API quota), a signed-in session, or the shared public beta key
   (`MODELFIT_BETA_KEY`, default `mf_beta_public`): 30/min and `MODELFIT_BETA_DAILY` (1,000)/day per IP, counted in
   `usage` under `beta:<ip>`. `MODELFIT_BETA=0` turns it off. Self-hosted: no key from allowed hosts.
-* **Cost:** a ranking is a pass over ~350 snapshot rows (1–3 ms); no network, no database writes besides metering.
+* **Cache-aware switching** (`convcost.py`): every channel now carries cached-read / cache-write prices and long-context
+  tiers from the provider's published pricing (OpenRouter endpoints, LiteLLM). With `current_model` + a conversation,
+  each candidate is simulated turn by turn over `cache.expected_turns`: the current model reads its warm prefix
+  (warm while `seconds_since_last_request` < the provider TTL in `config.json → cache`), every other model pays full
+  input plus any write premium on the first turn, then cached reads. The savings factor uses that horizon cost, and
+  `switching` compares stay vs switch (first-turn penalty, horizon totals, break-even turn over 50 turns, score gain
+  vs `min_switch_gain`, a cost-only "cheaper equivalent"). Channel pruning keeps endpoints that win on cache price.
+* **Cost:** a ranking is a pass over ~350 snapshot rows (1–3 ms; ~90 ms with a 30k-token conversation to tokenise);
+  no network, no database writes besides metering.
 
 ## Modules (`app/modelfit/`)
 
@@ -103,6 +111,7 @@ body (prompt? messages? task? weights? limits? filters?)
 | `plans.py` | **the** source of truth for plans, limits and feature flags |
 | `tenants.py` | workspace settings, re-scoring, pick history, signed webhooks (SSRF-guarded), the self-host workspace |
 | `triage.py`, `triage_corpus.py` | NLP request classifier for the ranking API |
+| `convcost.py` | cache-aware multi-turn cost simulation, best channel, break-even |
 | `ranker.py` | `/v1/rank`: validation, filters, factor scoring, explanations, options |
 | `modelmeta.py` | country, open weights, latency estimate, reliability per model |
 | `router.py` | routes per alias (hysteresis, pinning, fallbacks), request filtering, BYOK provider keys, gateway log |

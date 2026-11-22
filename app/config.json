@@ -449,5 +449,21 @@
       "label": "Perceptron",
       "country": "US"
     }
+  },
+  "cache": {
+    "default_ttl_seconds": 300,
+    "min_cacheable_tokens": 1024,
+    "default_turns": 5,
+    "ttl_seconds_by_vendor": {
+      "anthropic": 300,
+      "openai": 300,
+      "google": 300,
+      "deepseek": 3600,
+      "x-ai": 300,
+      "moonshotai": 300,
+      "z-ai": 300,
+      "qwen": 300,
+      "mistralai": 300
+    }
   }
 }

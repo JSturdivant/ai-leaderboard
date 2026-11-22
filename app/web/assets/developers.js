@@ -6,7 +6,17 @@
     const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
     const icon = (n) => `<svg class="i"><use href="/assets/icons.svg#${n}"/></svg>`;
     const BASE = location.origin;
-    let KEY = "mf_beta_public", OPTS = null, snipTab = "json", lastResult = null;
+    let KEY = "mf_beta_public", OPTS = null, snipTab = "json", lastResult = null, CONV = null;
+    // a long code-review conversation (~24k tokens) for the cache-aware switching examples
+    function longConversation() {
+        const msgs = [{ role: "system", content: "You are a senior engineer reviewing a large codebase. " + "Context about the repository, its modules and conventions. ".repeat(1500) }];
+        for (let i = 0; i < 6; i++) {
+            msgs.push({ role: "user", content: `Look at module ${i} and explain the data flow. `.repeat(20) });
+            msgs.push({ role: "assistant", content: "Here is the analysis of the module and how data moves through it. ".repeat(60) });
+        }
+        msgs.push({ role: "user", content: "Now refactor the payment module to use dependency injection." });
+        return msgs;
+    }
 
     const FACTORS = ["performance", "savings", "latency", "reliability", "context", "recency"];
     const DIMS = ["coding", "agentic", "reasoning", "chat"];
@@ -19,6 +29,8 @@
         { label: "Summarise", prompt: "Summarize this meeting transcript into 5 bullet points with owners and deadlines.", limits: { max_cost_per_request: 0.001 } },
         { label: "Agent + tools", task: "Autonomous coding agent: reads the repo, runs tests in a terminal, edits files until CI passes", filters: { tools: true, min_context: 128000 } },
         { label: "EU open model", prompt: "Draft a polite reply declining the meeting and proposing next week.", filters: { countries: ["FR", "DE"], open_weights: true, include_unknown_country: false } },
+        { label: "Long chat on Opus: switch?", conv: true, current: "anthropic/claude-opus-5.5", cache: { age: 30, turns: 8 }, weights: { performance: 6, savings: 4 } },
+        { label: "Warm cache: stay?", conv: true, current: "deepseek/deepseek-v4.1-flash-1017", cache: { age: 30, turns: 8 }, weights: { performance: 6, savings: 4 } },
         { label: "Translate", prompt: "Translate into Japanese: \"Thanks for your order! It will ship within two business days.\"" },
     ];
     const COUNTRY = { US: "United States", CN: "China", FR: "France", CA: "Canada", KR: "South Korea", JP: "Japan", IL: "Israel", DE: "Germany", GB: "United Kingdom", unknown: "Unknown" };
@@ -67,8 +79,17 @@
     function body() {
         const b = {};
         const p = $("#pgPrompt").value.trim(), t = $("#pgTask").value.trim();
+        if (CONV) b.messages = CONV;
         if (p) b.prompt = p;
         if (t) b.task = t;
+        const cur = $("#curModel").value.trim();
+        if (cur) b.current_model = cur;
+        const cache = {};
+        if ($("#cAge").value) cache.seconds_since_last_request = +$("#cAge").value;
+        if ($("#cTurns").value) cache.expected_turns = +$("#cTurns").value;
+        if ($("#cTokens").value) cache.cached_tokens = +$("#cTokens").value;
+        if (Object.keys(cache).length) b.cache = cache;
+        if ($("#cGain").value) b.min_switch_gain = +$("#cGain").value;
         if (!$("#wAuto").checked) {
             const w = {};
             for (const el of $$("#wSliders input")) if (+el.value > 0) w[el.dataset.w] = +el.value;
@@ -99,7 +120,10 @@
         if (n !== 10) b.limit = n;
         return b;
     }
-    function snippet(kind, b) {
+    function snippet(kind, b0) {
+        // keep long example conversations readable in the snippet
+        const b = b0.messages && JSON.stringify(b0.messages).length > 600
+            ? { ...b0, messages: [`… ${b0.messages.length} messages (~${Math.round(JSON.stringify(b0.messages).length / 4 / 1000)}k tokens) …`] } : b0;
         const json = JSON.stringify(b, null, 2);
         if (kind === "json") return json;
         if (kind === "curl") return `curl -X POST ${BASE}/v1/rank \\\n  -H "Authorization: Bearer ${KEY}" \\\n  -H "Content-Type: application/json" \\\n  -d '${JSON.stringify(b).replace(/'/g, "'\\''")}'`;
@@ -112,6 +136,9 @@
         const nf = b.filters ? Object.keys(b.filters).length : 0;
         $("#fSummary").textContent = nf ? `${nf} active` : "";
         $("#wSummary").textContent = $("#wAuto").checked ? "auto from triage" : "custom";
+        $("#cSummary").textContent = b.current_model ? `on ${b.current_model.split("/")[1]}` : "optional";
+        $("#pgConv").hidden = !CONV;
+        if (CONV) $("#pgConvText").textContent = `Example conversation loaded: ${CONV.length} messages, ~${Math.round(JSON.stringify(CONV).length / 4 / 1000)}k tokens`;
     }
     function samples() {
         const b = { prompt: "Refactor this React class component to hooks", weights: { coding: 6, savings: 3, latency: 1 }, filters: { open_weights: true }, limit: 5 };
@@ -157,16 +184,28 @@
             ${t.signals.length ? `<div class="pg-sig">${t.signals.map((s) => `<span>${esc(s.reason)}</span>`).join("")}</div>` : ""}
             ${Object.keys(j.excluded).length ? `<details class="pg-ex"><summary>${Object.values(j.excluded).reduce((a, b) => a + b, 0)} models excluded</summary>${Object.entries(j.excluded).map(([k, v]) => `<span>${esc(k.replace(/_/g, " "))}: <b>${v}</b></span>`).join("")}</details>` : ""}
         </div>`;
-        const rows = j.results.map((m) => `<div class="card pg-res">
+        const sw = j.switching;
+        const money = (x) => (x == null ? "—" : Math.abs(x) < 0.01 ? "$" + x.toFixed(4) : "$" + x.toFixed(2));
+        const swCard = !sw ? "" : `<div class="card pg-switch ${sw.recommendation}">
+            <div class="pg-sw-head"><span class="lbl">Cache-aware switching</span><span class="pill ${sw.recommendation === "stay" ? "good" : "warn"}">${esc(sw.recommendation.replace(/_/g, " "))}</span></div>
+            <div class="pg-sw-main"><b>${esc((sw.current_name || sw.current_model || "").replace(/^[^:]+: /, ""))}</b> <span class="muted">${sw.cache.warm ? `cache warm · ${sw.cache.cached_tokens.toLocaleString()} tokens · ~${sw.cache.expires_in_seconds}s left` : "cache cold"}</span>
+                ${sw.best_alternative ? `<span class="muted">vs</span> <b>${esc((sw.best_alternative_name || sw.best_alternative).replace(/^[^:]+: /, ""))}</b>` : ""}</div>
+            ${sw.stay_horizon_usd != null ? `<div class="pg-sw-nums"><span>Stay <b>${money(sw.stay_horizon_usd)}</b></span><span>Switch <b>${money(sw.switch_horizon_usd)}</b></span>
+                <span>over ${sw.horizon_turns} turns</span><span>first-turn penalty <b>${money(Math.max(0, sw.switch_now_extra_usd))}</b></span>
+                <span>break-even <b>${sw.breakeven_turn ? "turn " + sw.breakeven_turn : "never (50 turns)"}</b></span><span>score gain <b>${sw.score_gain > 0 ? "+" : ""}${sw.score_gain}</b></span></div>` : ""}
+            <p>${esc(sw.reason)}</p></div>`;
+        const rows = j.results.map((m) => `<div class="card pg-res ${m.is_current ? "current" : ""}">
             <div class="pg-res-head"><span class="pg-rank">${m.rank}</span><div class="pg-res-name"><b title="${esc(m.model)}">${esc(m.name.replace(/^[^:]+: /, ""))}</b>
-                <span class="muted">${esc(m.vendor_name || m.vendor)}${m.country ? " · " + esc(COUNTRY[m.country] || m.country) : ""}${m.open_weights ? ' · <span class="tagx">open weights</span>' : ""}${m.tools ? ' · <span class="tagx">tools</span>' : ""}${m.reasoning ? ' · <span class="tagx">reasoning</span>' : ""}</span></div>
+                <span class="muted">${m.is_current ? '<span class="tagx">current model</span> · ' : ""}${esc(m.vendor_name || m.vendor)}${m.country ? " · " + esc(COUNTRY[m.country] || m.country) : ""}${m.open_weights ? ' · <span class="tagx">open weights</span>' : ""}${m.tools ? ' · <span class="tagx">tools</span>' : ""}${m.reasoning ? ' · <span class="tagx">reasoning</span>' : ""}</span></div>
                 <div class="pg-score"><b>${m.score.toFixed(1)}</b><span>score</span></div></div>
             <div class="pg-factors">${Object.keys(j.weights).map((k) => `<div><span>${k}</span>${bar(m.factors[k])}<b>${m.factors[k] == null ? "—" : Math.round(m.factors[k])}</b></div>`).join("")}</div>
-            <div class="pg-facts"><span>${usd(m.cost.estimated_request_usd)} <em>this request</em></span><span>$${m.cost.input_per_m}/$${m.cost.output_per_m} <em>per M in/out</em></span>
+            <div class="pg-facts"><span>${usd(m.cost.estimated_request_usd)} <em>this request</em></span>${m.cost.horizon_turns > 1 ? `<span>${usd(m.cost.horizon_usd)} <em>next ${m.cost.horizon_turns} turns</em></span>` : ""}
+                ${m.cache.supported ? `<span>${m.cache.warm ? `${m.cache.cached_tokens.toLocaleString()} cached` : "caches"} <em>${m.cache.warm ? "warm" : "cold start"}</em></span>` : `<span>no cache <em>full price each turn</em></span>`}<span>$${m.cost.input_per_m}/$${m.cost.output_per_m} <em>per M in/out</em></span>
                 <span>${m.latency.ttft_s ?? "?"} s · ${m.latency.tokens_per_s ?? "?"} tok/s <em>${esc(m.latency.basis || "")}</em></span><span>${m.context ? Math.round(m.context / 1000) + "k" : "?"} <em>context</em></span></div>
             ${m.explanation ? `<ul class="pg-why">${m.explanation.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
         </div>`).join("") || `<div class="card pg-empty">${icon("info")}<p>No model matches these filters and limits. See which ones removed the most above.</p></div>`;
-        $("#pgOut").innerHTML = tri + rows + `<details class="pg-raw"><summary>Raw JSON response</summary><div class="code-snip">${esc(JSON.stringify(j, null, 2))}</div></details>`;
+        $("#pgModels").innerHTML = j.results.map((m) => `<option value="${esc(m.model)}">`).join("");
+        $("#pgOut").innerHTML = swCard + tri + rows + `<details class="pg-raw"><summary>Raw JSON response</summary><div class="code-snip">${esc(JSON.stringify(j, null, 2))}</div></details>`;
     }
 
     // ── events ──
@@ -175,6 +214,11 @@
         if (ex) {
             const x = EXAMPLES[+ex.dataset.ex];
             $("#pgPrompt").value = x.prompt || ""; $("#pgTask").value = x.task || "";
+            CONV = x.conv ? longConversation() : null;
+            $("#curModel").value = x.current || "";
+            $("#cAge").value = x.cache ? x.cache.age : ""; $("#cTurns").value = x.cache ? x.cache.turns : "";
+            $("#cTokens").value = ""; $("#cGain").value = "";
+            if (x.current) $("#convSec").open = true;
             $$("#pgExamples .chip").forEach((c) => c.classList.toggle("active", c === ex));
             // reset, then apply the example's settings
             const dimW = x.weights ? DIMS.reduce((acc, d) => acc + (x.weights[d] || 0), 0) : 0;
@@ -215,5 +259,6 @@
         if (e.target.closest("#pgForm")) update();
     });
     $("#pgForm").addEventListener("submit", run);
+    $("#pgConvClear").addEventListener("click", () => { CONV = null; update(); });
     init();
 })();

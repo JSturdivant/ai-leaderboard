@@ -80,6 +80,18 @@ textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3
 .endpoint .verb.post { color: var(--accent); background: var(--accent-soft); }
 .dev-docs { border-top: 1px solid var(--border-subtle); }
 
+.pg-conv { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--text-secondary); padding: 8px 10px; border-radius: 9px; background: var(--accent-soft); }
+.pg-conv svg.i { color: var(--accent); }
+.pg-conv .btn { margin-left: auto; }
+.pg-switch { padding: 16px 18px; display: grid; gap: 10px; box-shadow: none; border-left: 4px solid var(--good); }
+.pg-switch.switch { border-left-color: var(--warn); }
+.pg-switch p { font-size: 0.84rem; color: var(--text-secondary); }
+.pg-sw-head { display: flex; justify-content: space-between; align-items: center; }
+.pg-sw-main { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; font-size: 0.92rem; }
+.pg-sw-main .muted { font-size: 0.8rem; }
+.pg-sw-nums { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 0.82rem; color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.pg-sw-nums b { color: var(--text-primary); }
+.pg-res.current { box-shadow: 0 0 0 2px var(--accent-ring); }
 .dev-hero-grid > *, .pg > *, .pg-form > *, .docs article { min-width: 0; }
 .docs article table { display: block; overflow-x: auto; }
 @media (max-width: 960px) {

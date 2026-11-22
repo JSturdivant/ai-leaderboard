@@ -48,6 +48,7 @@
       <form class="card pg-form" id="pgForm" autocomplete="off">
         <div class="pg-examples" id="pgExamples"></div>
         <div class="field"><label for="pgPrompt">Prompt or conversation text <span class="muted">(optional)</span></label><textarea id="pgPrompt" rows="5" placeholder="Paste a prompt…"></textarea></div>
+        <div class="pg-conv" id="pgConv" hidden><svg class="i"><use href="/assets/icons.svg#history"/></svg><span id="pgConvText"></span><button type="button" class="btn btn-sm btn-ghost" id="pgConvClear">Remove</button></div>
         <div class="field"><label for="pgTask">Task description <span class="muted">(optional)</span></label><input type="text" id="pgTask" placeholder="e.g. customer support chatbot for a bank"></div>
 
         <details class="pg-sec" open><summary>Weights <span class="muted" id="wSummary">auto from triage</span></summary>
@@ -55,6 +56,14 @@
           <div class="pg-sliders" id="wSliders"></div>
           <label class="check" style="margin-top:8px"><input type="checkbox" id="mAuto" checked> Performance mix from triage</label>
           <div class="pg-sliders" id="mSliders"></div>
+        </details>
+        <details class="pg-sec" id="convSec"><summary>Conversation &amp; cache <span class="muted" id="cSummary">optional</span></summary>
+          <label class="field"><span class="lbl">Current model (the conversation runs on it now)</span><input type="text" id="curModel" list="pgModels" placeholder="e.g. anthropic/claude-opus-5.5"></label>
+          <datalist id="pgModels"></datalist>
+          <div class="row2"><label class="field"><span class="lbl">Seconds since last request</span><input type="number" id="cAge" min="0" step="10" placeholder="0 (cache warm)"></label>
+          <label class="field"><span class="lbl">Expected further turns</span><input type="number" id="cTurns" min="1" max="200" step="1" placeholder="auto (5)"></label></div>
+          <div class="row2"><label class="field"><span class="lbl">Cached tokens (if known)</span><input type="number" id="cTokens" min="0" step="1000" placeholder="from conversation"></label>
+          <label class="field"><span class="lbl">Min score gain to switch</span><input type="number" id="cGain" min="0" max="100" step="0.5" placeholder="2"></label></div>
         </details>
         <details class="pg-sec"><summary>Cost limits</summary>
           <div class="row2"><label class="field"><span class="lbl">Max $ per request</span><input type="number" id="limReq" min="0" step="0.001" placeholder="none"></label>
@@ -83,7 +92,7 @@
   </section>
 
   <div class="wrap docs dev-docs">
-    <nav aria-label="Developer docs"><a href="#quickstart">Quickstart</a><a href="#request">Request</a><a href="#weights">Weights &amp; scoring</a><a href="#triage">Triage (NLP)</a><a href="#filters">Filters &amp; limits</a><a href="#response">Response</a><a href="#endpoints">Other endpoints</a><a href="#errors">Errors &amp; limits</a><a href="/docs">Routing &amp; gateway →</a></nav>
+    <nav aria-label="Developer docs"><a href="#quickstart">Quickstart</a><a href="#request">Request</a><a href="#weights">Weights &amp; scoring</a><a href="#triage">Triage (NLP)</a><a href="#caching">Conversations &amp; caching</a><a href="#filters">Filters &amp; limits</a><a href="#response">Response</a><a href="#endpoints">Other endpoints</a><a href="#errors">Errors &amp; limits</a><a href="/docs">Routing &amp; gateway →</a></nav>
     <article>
       <h2 id="quickstart">Quickstart</h2>
       <p>One endpoint, JSON in, JSON out. Every field is optional: with an empty body you get the best all-round models for a generic request.</p>
@@ -106,6 +115,9 @@
         <tr><td><code>limits</code></td><td>object</td><td><code>max_cost_per_request</code> (USD), <code>max_blended_cost</code>, <code>max_input_cost</code>, <code>max_output_cost</code> ($ per million tokens).</td></tr>
         <tr><td><code>filters</code></td><td>object</td><td>Hard filters: see <a href="#filters">Filters</a>.</td></tr>
         <tr><td><code>input_tokens</code>, <code>expected_output_tokens</code></td><td>integer</td><td>Override the token estimate used for request cost (defaults: measured from your text, and a triage-based output estimate).</td></tr>
+        <tr><td><code>current_model</code></td><td>string</td><td>The model the conversation is on now. Turns on cache-aware costing and the <code>switching</code> recommendation (see <a href="#caching">caching</a>).</td></tr>
+        <tr><td><code>cache</code></td><td>object</td><td><code>seconds_since_last_request</code> (cache warmth), <code>expected_turns</code> (cost horizon, default 5 for conversations), <code>cached_tokens</code> (if you know it), <code>tokens_per_turn</code>, <code>ttl_seconds</code> (override the provider default), <code>provider</code> (where the cache lives).</td></tr>
+        <tr><td><code>min_switch_gain</code></td><td>number</td><td>Score points an alternative must gain over the current model before switching is recommended (default 2).</td></tr>
         <tr><td><code>limit</code></td><td>integer</td><td>Results to return, 1–50 (default 10).</td></tr>
         <tr><td><code>dedupe</code></td><td>boolean</td><td>One row per model when it is sold several ways, e.g. paid and <code>:free</code> (default true).</td></tr>
         <tr><td><code>explain</code></td><td>boolean</td><td>Include human-readable reasons per result (default true).</td></tr>
@@ -129,6 +141,32 @@
       <table id="taskTable"><tr><th>Task type</th><th>Maps to dimensions</th></tr></table>
       <p>Call <code>POST /v1/triage</code> with the same body to get only the classification.</p>
 
+      <h2 id="caching">Conversations &amp; caching</h2>
+      <p>Mid-conversation, the cheapest model is often the one you are already on. Providers cache the prompt prefix of recent requests and bill it at a fraction of the input price (typically 10%), but only on the model and provider that served it. Moving a long conversation to another model means paying full price for the whole history once, plus a cache-write premium where the provider charges one (for example 1.25×), before caching pays off there.</p>
+      <p>Send the conversation in <code>messages</code> and the model it runs on in <code>current_model</code>, and Modelfit prices every candidate over the next <code>cache.expected_turns</code> turns:</p>
+      <ul>
+        <li><b>Current model, warm cache</b>: the earlier messages are billed at its cached-read price. The cache counts as warm while <code>seconds_since_last_request</code> is under the provider's TTL (5 minutes for most; configurable).</li>
+        <li><b>Every other model</b>: the first turn pays the full input price plus any write premium; later turns read from the new cache.</li>
+        <li><b>Per provider endpoint</b>: cached-read and cache-write prices and long-context price tiers come from each endpoint's published pricing. Models without cache pricing pay full input every turn.</li>
+        <li>The <code>savings</code> factor uses this horizon cost, so the ranking itself is cache-aware.</li>
+      </ul>
+      <p>The response adds a <code>switching</code> block:</p>
+      <div class="code"><div class="code-head"><i></i><i></i><i></i><span>switching</span></div><pre>{ <span class="k">"current_model"</span>: <span class="s">"deepseek/deepseek-v4.1-flash-1017"</span>, <span class="k">"recommendation"</span>: <span class="s">"stay"</span>,
+  <span class="k">"best_alternative"</span>: <span class="s">"deepseek/deepseek-v4.1-flash"</span>, <span class="k">"score_gain"</span>: <span class="n">-2.34</span>, <span class="k">"min_switch_gain"</span>: <span class="n">2</span>,
+  <span class="k">"stay_horizon_usd"</span>: <span class="n">0.0028</span>, <span class="k">"switch_horizon_usd"</span>: <span class="n">0.0030</span>, <span class="k">"switch_now_extra_usd"</span>: <span class="n">0.0011</span>, <span class="k">"breakeven_turn"</span>: <span class="n">11</span>,
+  <span class="k">"cache"</span>: { <span class="k">"warm"</span>: <span class="n">true</span>, <span class="k">"cached_tokens"</span>: <span class="n">24033</span>, <span class="k">"ttl_seconds"</span>: <span class="n">3600</span>, <span class="k">"expires_in_seconds"</span>: <span class="n">3570</span> },
+  <span class="k">"cheaper_equivalent"</span>: <span class="n">null</span>,
+  <span class="k">"reason"</span>: <span class="s">"The best alternative scores only -2.3 … Switching to it breaks even on cost at turn 11. Your cache is warm …"</span> }</pre></div>
+      <table>
+        <tr><th>Field</th><th>Meaning</th></tr>
+        <tr><td><code>recommendation</code></td><td><code>switch</code> when the best alternative beats the current model by at least <code>min_switch_gain</code> score points with cache costs priced in (or the current model fails a filter/limit); otherwise <code>stay</code>.</td></tr>
+        <tr><td><code>switch_now_extra_usd</code></td><td>What switching costs on this turn compared with staying: mostly the cache you would give up.</td></tr>
+        <tr><td><code>stay_horizon_usd</code>, <code>switch_horizon_usd</code>, <code>breakeven_turn</code></td><td>Cumulative cost over the horizon each way, and the turn at which switching becomes cheaper (simulated up to 50 turns).</td></tr>
+        <tr><td><code>cheaper_equivalent</code></td><td>The model with performance within 2 points of yours that saves the most over the horizon, judged on cost alone.</td></tr>
+        <tr><td><code>cache</code></td><td>Whether your current model caches, whether the cache is still warm, and seconds until it expires: a good moment to switch is right after it expires.</td></tr>
+      </table>
+      <p>Each result also carries <code>cost.horizon_usd</code>, <code>cache.warm</code>, <code>cache.cached_tokens</code> and <code>cache.saved_this_turn_usd</code>. Token counts are one estimate for every model; real tokenizers differ by about ±15%.</p>
+
       <h2 id="filters">Filters &amp; limits</h2>
       <table>
         <tr><th>Filter</th><th>Meaning</th></tr>
@@ -151,7 +189,8 @@
         <tr><td><code>results[]</code></td><td>Ranked models: <code>score</code>, per-factor <code>factors</code> and <code>contributions</code>, <code>performance</code> (score, coverage, dimension scores), <code>cost</code> (estimated request USD, $/M in/out, cheapest channel and provider), <code>latency</code>, <code>reliability</code>, country, open weights, capabilities, <code>explanation</code>.</td></tr>
         <tr><td><code>triage</code></td><td>The classification of your request (see above).</td></tr>
         <tr><td><code>weights</code>, <code>performance_mix</code>, <code>basis</code></td><td>The normalised weights and mix actually used, and whether they came from your request or the triage.</td></tr>
-        <tr><td><code>assumptions</code></td><td>Token counts used for cost, implied requirements, auto quality floor.</td></tr>
+        <tr><td><code>switching</code></td><td>With <code>current_model</code>: stay or switch, with horizon costs, break-even turn and cache state (see <a href="#caching">caching</a>).</td></tr>
+        <tr><td><code>assumptions</code></td><td>Token counts used for cost (conversation prefix, new tokens, horizon), cache TTL and warmth, implied requirements, auto quality floor.</td></tr>
         <tr><td><code>candidates</code>, <code>excluded</code></td><td>How many models were ranked, and why the rest were not.</td></tr>
         <tr><td><code>generated_at</code></td><td>When the underlying price and benchmark snapshot was built (refreshed every 30 min to 24 h per source).</td></tr>
       </table>
