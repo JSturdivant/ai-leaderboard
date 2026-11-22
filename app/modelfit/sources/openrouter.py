@@ -19,6 +19,15 @@ URL = "https://openrouter.ai/api/v1/models"
 ENDPOINTS_URL = "https://openrouter.ai/api/v1/models/{id}/endpoints"
 
 
+def _tier(pricing):
+    """The long-context price tier, if any: {"min_prompt": tokens, "in", "out", "cache_read", "cache_write"} ($/M)."""
+    for o in pricing.get("overrides") or []:
+        if isinstance(o, dict) and o.get("min_prompt_tokens"):
+            return {"min_prompt": int(o["min_prompt_tokens"]), "in": per_million(o.get("prompt")), "out": per_million(o.get("completion")),
+                    "cache_read": per_million(o.get("input_cache_read")), "cache_write": per_million(o.get("input_cache_write"))}
+    return None
+
+
 def _trim_model(m):
     arch = m.get("architecture") or {}
     params = m.get("supported_parameters") or []
@@ -32,12 +41,15 @@ def _trim_model(m):
         "in": per_million(pricing.get("prompt")),
         "out": per_million(pricing.get("completion")),
         "cache_read": per_million(pricing.get("input_cache_read")),
+        "cache_write": per_million(pricing.get("input_cache_write")),
+        "long_tier": _tier(pricing),
         "input_modalities": arch.get("input_modalities") or [],
         "output_modalities": arch.get("output_modalities") or [],
         "tools": "tools" in params,
         "reasoning": "reasoning" in params or "include_reasoning" in params,
         "expiration": m.get("expiration_date"),
         "benchmarks": m.get("benchmarks") or None,
+        "hf": m.get("hugging_face_id") or None,   # set for open-weight models
     }
 
 
@@ -53,7 +65,12 @@ def _trim_endpoint(e):
         "in": per_million(p.get("prompt")),
         "out": per_million(p.get("completion")),
         "cache_read": per_million(p.get("input_cache_read")),
+        "cache_write": per_million(p.get("input_cache_write")),
+        "implicit_cache": e.get("supports_implicit_caching"),
+        "long_tier": _tier(p),
         "ctx": e.get("context_length"),
+        "latency": num(e.get("latency_last_30m")),        # only returned to authenticated callers today
+        "throughput": num(e.get("throughput_last_30m")),
     }
 
 

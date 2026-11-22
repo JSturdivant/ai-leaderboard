@@ -61,6 +61,42 @@ GET /v1/routes/{alias}?tools=1&context=N ──► the same chain, for customers
   hundred concurrent streams, move it to an async server (or a separate gateway service reading routes from
   Postgres/Redis) and log requests asynchronously.
 
+## Model Ranking API (`/v1/rank`)
+
+A stateless developer API on the same snapshot: no workspace needed.
+
+```
+body (prompt? messages? task? weights? limits? filters?)
+  └─► triage.classify ──► task types, dimension mix, complexity, language, tokens, needs (tools, vision, long context)
+  └─► ranker.rank ─────► hard filters + cost limits ─► factor scores 0-100 ─► weighted mean ─► ranked, explained results
+                          (country, open weights,      performance  category scores × mix (leaderboard data)
+                           vendors, capabilities,      savings      est. $ for this request, log-scaled across candidates
+                           context, age, $ limits)     latency      measured if published, else estimated (modelmeta.py)
+                                                       reliability  endpoint uptime + provider count
+                                                       context / recency
+```
+
+* **Triage (NLP)** is standard-library only: multinomial naive Bayes over unigrams + bigrams trained at import on a
+  labelled seed corpus (`triage_corpus.py`), plus structural signals (code, stack traces, SQL, LaTeX, tool calls,
+  translation/summary cues, a few non-English cues) and source weighting (task description ×2, latest user turn
+  highest). Swap in an embedding classifier later behind the same `classify()` contract.
+* **Model facts** (`modelmeta.py`, computed in the build): developer country (`config.json → vendors`), open
+  weights (OpenRouter's Hugging Face id, else known open families), vision, reliability, latency estimate.
+  OpenRouter only returns measured latency/throughput to authenticated callers, so latency is an estimate today
+  (labelled `basis: "estimated"`); the collector already captures the measured fields for when a key is configured.
+* **Auth:** a workspace API key (metered on the plan's API quota), a signed-in session, or the shared public beta key
+  (`MODELFIT_BETA_KEY`, default `mf_beta_public`): 30/min and `MODELFIT_BETA_DAILY` (1,000)/day per IP, counted in
+  `usage` under `beta:<ip>`. `MODELFIT_BETA=0` turns it off. Self-hosted: no key from allowed hosts.
+* **Cache-aware switching** (`convcost.py`): every channel now carries cached-read / cache-write prices and long-context
+  tiers from the provider's published pricing (OpenRouter endpoints, LiteLLM). With `current_model` + a conversation,
+  each candidate is simulated turn by turn over `cache.expected_turns`: the current model reads its warm prefix
+  (warm while `seconds_since_last_request` < the provider TTL in `config.json → cache`), every other model pays full
+  input plus any write premium on the first turn, then cached reads. The savings factor uses that horizon cost, and
+  `switching` compares stay vs switch (first-turn penalty, horizon totals, break-even turn over 50 turns, score gain
+  vs `min_switch_gain`, a cost-only "cheaper equivalent"). Channel pruning keeps endpoints that win on cache price.
+* **Cost:** a ranking is a pass over ~350 snapshot rows (1–3 ms; ~90 ms with a 30k-token conversation to tokenise);
+  no network, no database writes besides metering.
+
 ## Modules (`app/modelfit/`)
 
 | Module | Responsibility |
@@ -74,6 +110,10 @@ GET /v1/routes/{alias}?tools=1&context=N ──► the same chain, for customers
 | `auth.py` | scrypt passwords, HMAC'd session tokens and API keys |
 | `plans.py` | **the** source of truth for plans, limits and feature flags |
 | `tenants.py` | workspace settings, re-scoring, pick history, signed webhooks (SSRF-guarded), the self-host workspace |
+| `triage.py`, `triage_corpus.py` | NLP request classifier for the ranking API |
+| `convcost.py` | cache-aware multi-turn cost simulation, best channel, break-even |
+| `ranker.py` | `/v1/rank`: validation, filters, factor scoring, explanations, options |
+| `modelmeta.py` | country, open weights, latency estimate, reliability per model |
 | `router.py` | routes per alias (hysteresis, pinning, fallbacks), request filtering, BYOK provider keys, gateway log |
 | `secretbox.py` | authenticated encryption for stored provider keys |
 | `billing.py` | Stripe Checkout, customer portal, webhook verification and idempotent plan sync |

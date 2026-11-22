@@ -275,5 +275,195 @@
     "faded_days": 450,
     "min_opacity": 0.12
   },
-  "name_overrides": {}
+  "name_overrides": {},
+  "vendors": {
+    "openai": {
+      "label": "OpenAI",
+      "country": "US"
+    },
+    "anthropic": {
+      "label": "Anthropic",
+      "country": "US"
+    },
+    "google": {
+      "label": "Google",
+      "country": "US"
+    },
+    "meta": {
+      "label": "Meta",
+      "country": "US"
+    },
+    "x-ai": {
+      "label": "xAI",
+      "country": "US"
+    },
+    "mistralai": {
+      "label": "Mistral",
+      "country": "FR"
+    },
+    "deepseek": {
+      "label": "DeepSeek",
+      "country": "CN"
+    },
+    "qwen": {
+      "label": "Qwen (Alibaba)",
+      "country": "CN"
+    },
+    "z-ai": {
+      "label": "Z.ai",
+      "country": "CN"
+    },
+    "moonshotai": {
+      "label": "Moonshot",
+      "country": "CN"
+    },
+    "minimax": {
+      "label": "MiniMax",
+      "country": "CN"
+    },
+    "nvidia": {
+      "label": "NVIDIA",
+      "country": "US"
+    },
+    "xiaomi": {
+      "label": "Xiaomi",
+      "country": "CN"
+    },
+    "tencent": {
+      "label": "Tencent",
+      "country": "CN"
+    },
+    "amazon": {
+      "label": "Amazon",
+      "country": "US"
+    },
+    "cohere": {
+      "label": "Cohere",
+      "country": "CA"
+    },
+    "microsoft": {
+      "label": "Microsoft",
+      "country": "US"
+    },
+    "perplexity": {
+      "label": "Perplexity",
+      "country": "US"
+    },
+    "inclusionai": {
+      "label": "inclusionAI (Ant Group)",
+      "country": "CN"
+    },
+    "bytedance-seed": {
+      "label": "ByteDance Seed",
+      "country": "CN"
+    },
+    "bytedance": {
+      "label": "ByteDance",
+      "country": "CN"
+    },
+    "baidu": {
+      "label": "Baidu",
+      "country": "CN"
+    },
+    "stepfun": {
+      "label": "StepFun",
+      "country": "CN"
+    },
+    "meituan": {
+      "label": "Meituan",
+      "country": "CN"
+    },
+    "sakana": {
+      "label": "Sakana AI",
+      "country": "JP"
+    },
+    "thinkingmachines": {
+      "label": "Thinking Machines",
+      "country": "US"
+    },
+    "liquid": {
+      "label": "Liquid AI",
+      "country": "US"
+    },
+    "upstage": {
+      "label": "Upstage",
+      "country": "KR"
+    },
+    "kt": {
+      "label": "KT",
+      "country": "KR"
+    },
+    "motif-technologies": {
+      "label": "Motif Technologies",
+      "country": "KR"
+    },
+    "aion-labs": {
+      "label": "Aion Labs",
+      "country": "IL"
+    },
+    "rekaai": {
+      "label": "Reka",
+      "country": "US"
+    },
+    "writer": {
+      "label": "Writer",
+      "country": "US"
+    },
+    "ibm-granite": {
+      "label": "IBM",
+      "country": "US"
+    },
+    "nousresearch": {
+      "label": "Nous Research",
+      "country": "US"
+    },
+    "cognitivecomputations": {
+      "label": "Cognitive Computations",
+      "country": "US"
+    },
+    "fireworks": {
+      "label": "Fireworks AI",
+      "country": "US"
+    },
+    "inference-net": {
+      "label": "Inference.net",
+      "country": "US"
+    },
+    "moondream": {
+      "label": "Moondream",
+      "country": "US"
+    },
+    "morph": {
+      "label": "Morph",
+      "country": "US"
+    },
+    "relace": {
+      "label": "Relace",
+      "country": "US"
+    },
+    "reflection": {
+      "label": "Reflection AI",
+      "country": "US"
+    },
+    "perceptron": {
+      "label": "Perceptron",
+      "country": "US"
+    }
+  },
+  "cache": {
+    "default_ttl_seconds": 300,
+    "min_cacheable_tokens": 1024,
+    "default_turns": 5,
+    "ttl_seconds_by_vendor": {
+      "anthropic": 300,
+      "openai": 300,
+      "google": 300,
+      "deepseek": 3600,
+      "x-ai": 300,
+      "moonshotai": 300,
+      "z-ai": 300,
+      "qwen": 300,
+      "mistralai": 300
+    }
+  }
 }
